@@ -5,9 +5,9 @@ import os
 from collections import deque
 
 # ==========================================
-# 1. 核心状态估计器 (零滞后 Alpha-Beta 滤波器)
+# 1. 核心运动学追踪器 (Alpha-Beta 滤波器)
 # ==========================================
-class AlphaBetaTrackerV30:
+class KinematicTracker:
     def __init__(self, H_matrix):
         self.H = H_matrix
         self.last_t = None
@@ -28,7 +28,6 @@ class AlphaBetaTrackerV30:
     def update(self, centroid_px, timestamp, current_phase):
         if centroid_px is None: return None
         
-        # 传统 CV 提取的质心极其稳定，不再需要 EMA 预平滑
         u, v = centroid_px
         raw_x, raw_y = self.pixel_to_world(u, v)
 
@@ -51,13 +50,13 @@ class AlphaBetaTrackerV30:
                 self.vel_inited = True
             return self.x, self.y, 0.0, 0.0
 
-        # 由于原生质心噪点极小，我们可以使用更激进的响应参数
+        # 动态滤波参数
         if current_phase in ["Phase I: Transient", "Phase II: Convergence"]:
-            alpha = 0.85  # 几乎 100% 信任当前物理坐标
-            beta  = 0.35  # 极速响应加速度，0滞后
+            alpha = 0.85  
+            beta  = 0.35  
         else:
-            alpha = 0.15  # 稳态微调
-            beta  = 0.005 # 稳态速度锁死
+            alpha = 0.15  
+            beta  = 0.005 
 
         x_pred = self.x + self.vx * dt
         y_pred = self.y + self.vy * dt
@@ -76,7 +75,7 @@ class AlphaBetaTrackerV30:
         return float(self.x), float(self.y), float(self.vx), float(self.vy)
 
 # ==========================================
-# 2. 目标驱动状态机
+# 2. 运动状态分类器
 # ==========================================
 class PhaseClassifier:
     def __init__(self, target_v):
@@ -99,17 +98,24 @@ class PhaseClassifier:
         return "Phase II: Convergence"
 
 # ==========================================
-# 3. 报表生成 (保持原样)
+# 3. 旗舰学术报表渲染
 # ==========================================
-def generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_name):
+def generate_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_name):
     if len(h_t) < 20: return
     
     t, x, y, v = np.array(h_t), np.array(h_x), np.array(h_y), np.array(h_v)
     errors_pct = ((v - target_v) / target_v) * 100
 
+    # 计算稳态区间的平均误差 (用于新增的图表指示线)
+    steady_errors = []
+    for i, phase in enumerate(h_phases):
+        if phase == "Phase III: Steady State":
+            steady_errors.append(errors_pct[i])
+    mean_steady_error = np.mean(steady_errors) if steady_errors else 0.0
+
     plt.rcParams.update({'font.size': 10, 'axes.linewidth': 1.0})
     fig, axs = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle(f'Pure CV Kinematic Analysis ($V_{{target}} = {target_v}$ cm/s)', fontsize=15, fontweight='bold', y=0.96)
+    fig.suptitle(f'Kinematic Performance Analysis ($V_{{target}} = {target_v}$ cm/s)', fontsize=15, fontweight='bold', y=0.96)
     plt.subplots_adjust(hspace=0.35, wspace=0.25, bottom=0.15) 
 
     phase_colors = {
@@ -136,6 +142,7 @@ def generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_na
         by_label = dict(zip(labels, handles))
         ax.legend(by_label.values(), by_label.keys(), loc=loc, fontsize=8)
 
+    # --- 图 1: 空间轨迹 ---
     axs[0,0].plot(x, y, color='#4a148c', lw=2.0)
     axs[0,0].axvline(x=0, color='gray', linestyle='--', alpha=0.5)
     axs[0,0].axvline(x=180, color='gray', linestyle='--', alpha=0.5)
@@ -144,6 +151,7 @@ def generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_na
     axs[0,0].set_xlim(min(x)-10, max(200, max(x)+10)); axs[0,0].set_ylim(-10, 70)
     axs[0,0].grid(True, linestyle=':', alpha=0.6)
 
+    # --- 图 2: 线性位移 ---
     axs[0,1].plot(t, x, color='#1565c0', label='$X$ Displacement')
     axs[0,1].plot(t, y, color='#e65100', label='$Y$ Displacement')
     draw_dynamic_zones(axs[0,1])
@@ -152,20 +160,27 @@ def generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_na
     format_legend(axs[0,1], loc='upper left')
     axs[0,1].grid(True, linestyle=':', alpha=0.6)
 
-    axs[1,0].plot(t, v, color='#0d47a1', lw=2.0, label='Estimated $v$')
-    axs[1,0].axhline(y=target_v, color='#b71c1c', ls='--', lw=1.5, label=f'Target $v_{{ref}}$ = {target_v}')
+    # --- 图 3: 速度跟随 ---
+    axs[1,0].plot(t, v, color='#0d47a1', lw=2.0, label='Estimated Velocity')
+    axs[1,0].axhline(y=target_v, color='#b71c1c', ls='--', lw=1.5, label=f'Target $V_{{ref}}$ = {target_v}')
     draw_dynamic_zones(axs[1,0])
     axs[1,0].fill_between(t, target_v*0.85, target_v*1.15, color='gray', alpha=0.15, label='$\pm$15% Tolerance')
-    axs[1,0].set_title('Pure CV Velocity Estimation (Centroid Tracking)', fontsize=12)
-    axs[1,0].set_xlabel('Time $t$ (s)'); axs[1,0].set_ylabel('Velocity $v$ (cm/s)')
+    axs[1,0].set_title('Velocity Estimation Performance', fontsize=12)
+    axs[1,0].set_xlabel('Time $t$ (s)'); axs[1,0].set_ylabel('Velocity (cm/s)')
     axs[1,0].set_ylim(0, max(45, target_v * 1.5)) 
     format_legend(axs[1,0], loc='lower right')
     axs[1,0].grid(True, linestyle=':', alpha=0.6)
 
+    # --- 图 4: 相对误差 (新增平均稳态误差标线) ---
     axs[1,1].plot(t, errors_pct, color='#d84315', lw=1.5, label='Relative Error $E$') 
     axs[1,1].axhline(y=0, color='k', lw=1.0)
-    axs[1,1].axhline(y=15, color='#b71c1c', ls=':', alpha=0.8, label='Upper Bound (+15%)')
-    axs[1,1].axhline(y=-15, color='#b71c1c', ls=':', alpha=0.8, label='Lower Bound (-15%)')
+    axs[1,1].axhline(y=15, color='#b71c1c', ls=':', alpha=0.8, label='Tolerance Bound ($\pm$15%)')
+    axs[1,1].axhline(y=-15, color='#b71c1c', ls=':', alpha=0.8)
+    
+    if steady_errors:
+        axs[1,1].axhline(y=mean_steady_error, color='#2ca02c', ls='-.', lw=1.5, 
+                         label=f'Mean Steady Error ({mean_steady_error:+.2f}%)')
+
     draw_dynamic_zones(axs[1,1])
     axs[1,1].set_title('Relative Velocity Error Analysis', fontsize=12)
     axs[1,1].set_xlabel('Time $t$ (s)'); axs[1,1].set_ylabel('Error $E$ (%)')
@@ -173,22 +188,24 @@ def generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_na
     format_legend(axs[1,1], loc='lower right')
     axs[1,1].grid(True, linestyle=':', alpha=0.6)
 
+    # --- 科研底注优化 ---
     footer_text = (
-        "Pure CV Protocol (Background Subtraction + Centroid Tracking):\n"
-        "1. YOLO Neural Network Removed. Zero bounding box jitter.\n"
-        "2. Mathematical Center of Mass used for sub-pixel stability.\n"
-        "3. Dynamic \u03b1-\u03b2 Filter ensures immediate acceleration tracking and steady-state inertia lock."
+        "Phase Demarcation Criteria:\n"
+        "[Phase I] Transient: Initial kinematic acceleration phase ($t < 0.5s$).\n"
+        "[Phase II] Convergence: System adaptation prior to achieving steady-state tolerance.\n"
+        "[Phase III] Steady State: Engaged when within optimal optical zone ($15 \leq X \leq 165cm$) and error $\leq 15\%$.\n"
+        "[Phase IV] Terminal: Egress from calibrated field ($X > 165cm$)."
     )
     fig.text(0.08, 0.02, footer_text, ha='left', va='bottom', fontsize=9.5, color='#333333', 
              bbox=dict(boxstyle='round,pad=0.6', facecolor='#f9f9f9', edgecolor='#cccccc', alpha=0.9))
 
-    save_name = f'Report_V30_PureCV_{run_name}_{target_v}cm_s.png'
+    save_name = f'Report_Final_{run_name}_{target_v}cm_s.png'
     plt.savefig(save_name, dpi=300, bbox_inches='tight')
-    print(f"Academic report saved to {save_name}")
+    print(f"Final report saved to {save_name}")
     plt.close()
 
 # ==========================================
-# 4. 视频处理与 UI 交互 (纯视觉追踪管线)
+# 4. 视频渲染与主程序
 # ==========================================
 pts_clicked = []
 def click_event(event, x, y, flags, params):
@@ -245,19 +262,17 @@ def process_dataset(video_path, target_v, run_name, cached_data=None):
     real_fps = cap.get(cv2.CAP_PROP_FPS)
     if real_fps <= 0 or np.isnan(real_fps): real_fps = 30.0
     
-    # 彻底删除 YOLO 加载代码
-    # 引入高精度背景差分器 (MOG2)
+    # 采用高精度背景差分
     back_sub = cv2.createBackgroundSubtractorMOG2(history=500, varThreshold=50, detectShadows=False)
-    
-    # 生成标定区 Mask (防止背景里有人走动干扰测试)
     roi_mask = np.zeros(frame_first.shape[:2], dtype=np.uint8)
     cv2.fillPoly(roi_mask, [np.int32(pts_px)], 255)
     
-    output_vid_name = f'Tracked_V30_PureCV_{run_name}_{target_v}cm_s.mp4'
+    # 视频输出 (标准化命名)
+    output_vid_name = f'Tracked_Final_{run_name}_{target_v}cm_s.mp4'
     w, h = int(cap.get(3)), int(cap.get(4))
     out = cv2.VideoWriter(output_vid_name, cv2.VideoWriter_fourcc(*'mp4v'), real_fps, (w, h))
     
-    tracker = AlphaBetaTrackerV30(H)
+    tracker = KinematicTracker(H)
     classifier = PhaseClassifier(target_v)
     H_inv = np.linalg.inv(H)  
     
@@ -266,7 +281,6 @@ def process_dataset(video_path, target_v, run_name, cached_data=None):
     traj_pts = deque(maxlen=45) 
     current_phase = "Phase I: Transient" 
 
-    # 预热背景模型
     back_sub.apply(frame_first)
 
     try:
@@ -276,39 +290,31 @@ def process_dataset(video_path, target_v, run_name, cached_data=None):
             
             curr_t = len(h_t) / real_fps 
             
-            # --- 纯视觉核心：提取物理质心 ---
             fg_mask = back_sub.apply(frame)
-            # 1. 限制在标定区域内寻找
             fg_mask = cv2.bitwise_and(fg_mask, roi_mask)
-            # 2. 形态学滤波去除小噪点
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
             fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel)
             
-            # 3. 寻找最大轮廓 (即小车)
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             centroid_px = None
             
             if contours:
                 largest_contour = max(contours, key=cv2.contourArea)
-                if cv2.contourArea(largest_contour) > 800: # 面积阈值过滤
-                    # 4. 计算几何质心 (极其稳定的亚像素点)
+                if cv2.contourArea(largest_contour) > 800: 
                     M = cv2.moments(largest_contour)
                     if M["m00"] != 0:
                         cx = int(M["m10"] / M["m00"])
-                        # 为了物理准确，我们依然取质心靠下的位置代表底盘
                         _, _, _, h_box = cv2.boundingRect(largest_contour)
                         cy = int(M["m01"] / M["m00"]) + int(h_box * 0.3)
                         centroid_px = (cx, cy)
                         last_centroid = centroid_px
                         
-                        # 在视频中画出提取出的纯粹轮廓
                         cv2.drawContours(frame, [largest_contour], -1, (0, 255, 0), 2)
                         cv2.circle(frame, centroid_px, 6, (0, 0, 255), -1)
 
             res = tracker.update(centroid_px, curr_t, current_phase)
             
-            # 叠加基础 HUD
             overlay = frame.copy()
             cv2.fillPoly(overlay, [np.int32(pts_px)], (255, 100, 0))
             cv2.addWeighted(overlay, 0.15, frame, 0.85, 0, frame)
@@ -353,15 +359,16 @@ def process_dataset(video_path, target_v, run_name, cached_data=None):
                     "Phase III: Steady State": (0, 255, 0),
                     "Phase IV: Terminal": (150, 150, 150)
                 }
+                # HUD 极简状态显示
                 cv2.putText(frame, f"[{current_phase.split(':')[1].strip()}]", (35, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.6, z_colors.get(current_phase, (255,255,255)), 1)
 
             out.write(frame)
-            cv2.imshow(f"Pure CV Tracking: {run_name}", frame)
+            cv2.imshow(f"Processing: {run_name}", frame)
             if cv2.waitKey(1) & 0xFF == ord('q'): break
     finally:
         cap.release(); out.release(); cv2.destroyAllWindows()
 
-    generate_auto_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_name)
+    generate_academic_report(h_t, h_x, h_y, h_v, h_phases, target_v, run_name)
     print(f"Dataset {run_name} completed.\n")
     return (H, pts_px)
 
@@ -372,8 +379,7 @@ if __name__ == "__main__":
     ]
     
     print("========================================")
-    print("  Kinematic System V30 (PURE CV CENTROID)")
-    print("  YOLO Removed. Max Precision Engaged.")
+    print("  Kinematic Evaluation System (Final)")
     print("========================================\n")
 
     shared_data = None
@@ -383,4 +389,4 @@ if __name__ == "__main__":
             continue
         shared_data = process_dataset(ds["path"], ds["target"], ds["name"], cached_data=shared_data)
         
-    print("Batch processing finished.")
+    print("All tasks finished successfully.")
