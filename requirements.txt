@@ -1,0 +1,17 @@
+# 第二学期依赖
+# 安装：pip install -r requirements.txt
+
+# 图像处理与出图（第一学期已在用，版本不变）
+opencv-python>=4.5
+numpy>=1.20
+matplotlib>=3.4          # 学术报表，300dpi 英文标注
+
+# ── 不加装以下两项 ──────────────────────────────────────────
+# torch / ultralytics   第一代 YOLOv5（best.pt）已弃用，仅作对比时的备选；
+#                       第二学期主线是 MOG2 + Alpha-Beta，不需要它们
+# 供电与转接件            相机走 USB 供电（1.81 W），C-Mount 直装，不需要额外硬件
+#
+# ── MVS SDK 不在 pip 里 ─────────────────────────────────────
+# MvCameraControl 的 Python 绑定随海康 MVS 客户端一起提供，
+# 需要把 MVS 安装目录下 Development\Samples\Python\MvImport 复制到仓库根目录。
+# 详见 docs/相机打通步骤.md 步骤 2。

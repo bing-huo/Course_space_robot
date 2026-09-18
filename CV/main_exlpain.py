@@ -443,11 +443,25 @@ def process_dataset(video_path, target_v, run_name, cached_data=None):
 # ==========================================
 # 5. 总司令部：一键处理所有视频
 # ==========================================
+def _find_baseline(name):
+    """定位第一学期基线素材。
+
+    P0.3.g 之后素材归档到 data/v1_baseline/。归档前后都要能跑，
+    所以两个位置都找一遍；都找不到就返回归档后的目标路径，交给上层报错。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here, "..", "data", "v1_baseline", name),
+                 os.path.join(here, name)):
+        if os.path.exists(cand):
+            return os.path.normpath(cand)
+    return os.path.normpath(os.path.join(here, "..", "data", "v1_baseline", name))
+
+
 if __name__ == "__main__":
     # 配置要处理的视频路径和目标速度
     datasets = [
-        {"path": "test_video_21.mp4", "target": 21.0, "name": "Run_21"},
-        {"path": "test_video_31.mp4", "target": 31.0, "name": "Run_31"}
+        {"path": _find_baseline("test_video_21.mp4"), "target": 21.0, "name": "Run_21"},
+        {"path": _find_baseline("test_video_31.mp4"), "target": 31.0, "name": "Run_31"}
     ]
     
     print("========================================")
