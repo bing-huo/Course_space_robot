@@ -1,0 +1,34 @@
+# ── Python ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# ── 模型权重（体积大，不入库；需要时单独下发）────────────
+# 注意：CV/best.pt 在第一学期已被 git 跟踪，本条不会把它移出版本库；
+# 想清理需显式 git rm --cached CV/best.pt
+*.pt
+*.onnx
+
+# ── 运行产物 ────────────────────────────────────────────
+out/
+data/detect_log/
+data/results/
+data/ground_truth/
+
+# 追踪视频与报表图（体积大、可复现）
+Tracked_*.mp4
+Report_*.png
+
+# ── 系统与编辑器 ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+
+# Obsidian：只忽略每人不同的布局状态；app.json / appearance.json /
+# core-plugins.json 是共享设置，docs/ 里的 [[双链]] 依赖它，要留在库里
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
