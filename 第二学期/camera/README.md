@@ -1,6 +1,6 @@
 # camera/ —— 相机接入
 
-第二学期新增。**打通步骤、排错、判据全部在 [`docs/相机打通步骤.md`](../docs/相机打通步骤.md)**，先看那份。
+第二学期新增。**打通步骤、排错、判据全部在 [`../相机打通步骤.md`](../相机打通步骤.md)**，先看那份。
 
 ## 文件
 
@@ -15,7 +15,7 @@
 > ⚠️ **所有命令都在仓库根目录下执行**（代码用 `import config` 读全局参数，从别处运行会 `ModuleNotFoundError`）：
 >
 > ```powershell
-> cd "C:\Users\binghuo\Desktop\科创课\Course_space_robot"
+> cd "C:\Users\binghuo\Desktop\科创课\Course_space_robot\第二学期"
 > ```
 
 ```bash
@@ -24,7 +24,7 @@ python -m camera.frame_clock
 
 # 假相机跑通全流程
 python -m camera.camera_capture --backend mock snap out/mock_frame.png
-python -m camera.camera_capture --backend mock --mock-video data/v1_baseline/test_video_21.mp4 info
+python -m camera.camera_capture --backend mock --mock-video ../../第一学期/data/v1_baseline/test_video_21.mp4 info
 
 # 真机
 python -m camera.camera_capture list
@@ -42,7 +42,7 @@ python -m camera.camera_capture bench -s 300      # P1.2 判据：5 分钟不掉
 而且不少机器上装不上。所有版本差异都关在 `backend.py` 里；
 MVS 挂掉时 `open_camera()` 会自动退回 Mock 并打印原因，进度不会停。
 
-**bench 子命令一次回答三个问题**（`docs/相机与镜头参数汇总.md` §6 的待确认项）：
+**bench 子命令一次回答三个问题**（`../../器材_相机与镜头/相机与镜头参数.md` §6 的待确认项）：
 实测帧率是多少、硬件时间戳能不能用且单位是什么、FrameID 连不连续（丢没丢帧）。
 
 ## 已定的参数
@@ -53,7 +53,7 @@ px/cm **14.37**。
 
 相机工作点同样已实测：**曝光 10 ms**（光源 100 Hz 纹波，2~5 ms 全部频闪，10 ms 起干净）、
 增益 0 dB、光圈 F5.6 起、目标白面灰度 150~200。详见
-[`docs/光照系统实测与工作点.md`](../docs/光照系统实测与工作点.md)。
+[`../光照系统实测与工作点.md`](../光照系统实测与工作点.md)。
 
 仍需现场实测覆盖的：`CONTOUR_AREA_MIN`（按实拍目标面积 ×0.4~0.5 重算）、
 `CY_OFFSET_K`（P1.8）。**曝光一旦定死，L0–L4 全程不许改**。

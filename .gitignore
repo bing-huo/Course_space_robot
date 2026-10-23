@@ -8,16 +8,16 @@ env/
 .ipynb_checkpoints/
 
 # ── 模型权重（体积大，不入库；需要时单独下发）────────────
-# 注意：CV/best.pt 在第一学期已被 git 跟踪，本条不会把它移出版本库；
-# 想清理需显式 git rm --cached CV/best.pt
+# 注意：第一学期/CV/best.pt 已被 git 跟踪，本条不会把它移出版本库；
+# 想清理需显式 git rm --cached "第一学期/CV/best.pt"
 *.pt
 *.onnx
 
 # ── 运行产物 ────────────────────────────────────────────
 out/
-data/detect_log/
-data/results/
-data/ground_truth/
+第二学期/data/detect_log/
+第二学期/data/results/
+第二学期/data/ground_truth/
 
 # ── 工具产出 / 大文件（不入库）──────────────────────────
 # Lark Slides 工具工作目录（约 76 MB，非项目内容）
@@ -25,7 +25,7 @@ data/ground_truth/
 # 汇报成品与素材体积大，另行分发
 *.pptx
 # 标定中间结果（单应矩阵），现场重新生成
-calibration/*.npy
+第二学期/calibration/*.npy
 
 # 追踪视频与报表图（体积大、可复现）
 Tracked_*.mp4
@@ -37,6 +37,6 @@ Thumbs.db
 *.swp
 
 # Obsidian：只忽略每人不同的布局状态；app.json / appearance.json /
-# core-plugins.json 是共享设置，docs/ 里的 [[双链]] 依赖它，要留在库里
+# core-plugins.json 是共享设置，[[双链]] 依赖它，要留在库里
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json

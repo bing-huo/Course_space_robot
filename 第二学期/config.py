@@ -24,17 +24,21 @@ from pathlib import Path
 # ================================================================
 # 一、路径
 # ================================================================
+#
+# 仓库按学期分目录：本文件在 第二学期/ 下，是第二学期的运行根目录
+# （`python -m camera...` 要在本目录执行）。跨学期的资源用 PROJECT_ROOT 指过去。
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parent            # 第二学期/
+PROJECT_ROOT = REPO_ROOT.parent                        # 仓库根
 
 DATA_DIR = REPO_ROOT / "data"
-V1_BASELINE_DIR = DATA_DIR / "v1_baseline"      # P0.3.g 归档
 DETECT_LOG_DIR = DATA_DIR / "detect_log"        # 逐帧检测日志
 GROUND_TRUTH_DIR = DATA_DIR / "ground_truth"
 RESULTS_DIR = DATA_DIR / "results"
 
-# 第一学期遗留（CV/ 冻结保留，回归测试要用）
-V1_DIR = REPO_ROOT / "CV"
+# 第一学期遗留（第一学期/CV 冻结保留，回归测试要用）
+V1_BASELINE_DIR = PROJECT_ROOT / "第一学期" / "data" / "v1_baseline"
+V1_DIR = PROJECT_ROOT / "第一学期" / "CV"
 V1_CALIBRATION_CONFIG = V1_DIR / "calibration_config.json"
 
 # 第二学期标定产物

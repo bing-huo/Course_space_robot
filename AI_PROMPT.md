@@ -1,5 +1,9 @@
 # 空间在轨服务机器人 — 科研创新训练课 AI 协作提示词
 
+> ⚠️ **2026-10-23 仓库已按学期重组**：根目录为 `第一学期/`、`第二学期/`、`第三学期/`、
+> `器材_相机与镜头/` + 四份总文档（00–03）。本文末尾的旧目录结构仅作历史参考，
+> 当前结构见根 `README.md`。
+
 ---
 
 ## 一、项目宏观背景
@@ -76,12 +80,12 @@
 **关键文件**：
 | 文件 | 说明 |
 |---|---|
-| `CV/main.py` | 旗舰版主程序 |
-| `CV/main_exlpain.py` | 教学注释版 |
-| `CV/pick_coords.py` | 标定工具 |
-| `CV/calibration_config.json` | 标定坐标缓存 |
-| `CV/best.pt` | 第一代 YOLOv5 权重（已弃用，保留作对比） |
-| `CV/python/test.py` | 第一代方案（YOLOv5 + Kalman） |
+| `第一学期/CV/main.py` | 旗舰版主程序 |
+| `第一学期/CV/main_exlpain.py` | 教学注释版 |
+| `第一学期/CV/pick_coords.py` | 标定工具 |
+| `第一学期/CV/calibration_config.json` | 标定坐标缓存 |
+| `第一学期/CV/best.pt` | 第一代 YOLOv5 权重（已弃用，保留作对比） |
+| `第一学期/CV/python/test.py` | 第一代方案（YOLOv5 + Kalman） |
 
 **第一学期成果**：成功在 21 cm/s 和 31 cm/s 两种目标速度下完成了运动性能评测，验证了视觉系统的精度和鲁棒性。
 
@@ -166,7 +170,7 @@
 
 ```
 Course_space_robot/
-├── CV/
+├── 第一学期/CV
 │   ├── main.py                    # 第一学期旗舰主程序
 │   ├── main_exlpain.py            # 教学注释版
 │   ├── pick_coords.py             # 标定工具

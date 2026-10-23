@@ -22,7 +22,7 @@
 | 相机接入与时间基准 | `camera/`（FrameClock、MVS/Mock 后端、命令行） |
 | 标定方法与工具 | `calibration/check_board.py`、本文档体系的标定流程 |
 | 光照频闪测试 | `lighting/flicker_test.py` |
-| 算法流水线 | `CV/main.py`（v1）与后续 `main_v2.py` |
+| 算法流水线 | `../第一学期/CV/main.py`（v1）与后续 `main_v2.py` |
 | 测量协议与指标定义 | [`../02_实验设计与测量协议.md`](../02_实验设计与测量协议.md) |
 
 ## 四、开工前要回答的问题
