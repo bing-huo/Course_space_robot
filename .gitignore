@@ -19,6 +19,14 @@ data/detect_log/
 data/results/
 data/ground_truth/
 
+# ── 工具产出 / 大文件（不入库）──────────────────────────
+# Lark Slides 工具工作目录（约 76 MB，非项目内容）
+.lark-slides/
+# 汇报成品与素材体积大，另行分发
+*.pptx
+# 标定中间结果（单应矩阵），现场重新生成
+calibration/*.npy
+
 # 追踪视频与报表图（体积大、可复现）
 Tracked_*.mp4
 Report_*.png

@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import sys
 import time
@@ -40,8 +41,12 @@ import config
 
 @dataclass
 class Frame:
-    """一帧图像及其时间信息。"""
-    image: np.ndarray                 # BGR（彩色）或单通道灰度
+    """一帧图像及其时间信息。
+
+    image 为 None 表示这一帧只取了时间信息、没做像素格式转换
+    （`MvsBackend.read(convert=False)`，bench 测"相机上限帧率"时用）。
+    """
+    image: Optional[np.ndarray]          # BGR（彩色）或单通道灰度；raw 模式下为 None
     index: int                        # 后端内部的连续计数
     frame_id: Optional[int] = None    # 相机 FrameID，可查丢帧
     device_ts: Optional[int] = None   # 相机硬件时间戳（原始值，未换算）
@@ -49,7 +54,7 @@ class Frame:
 
     @property
     def shape(self):
-        return self.image.shape
+        return None if self.image is None else self.image.shape
 
 
 class CameraError(RuntimeError):
@@ -62,6 +67,22 @@ def _get(obj, *names, default=None):
         if hasattr(obj, n):
             return getattr(obj, n)
     return default
+
+
+def _enum_layer(mvs) -> int:
+    """枚举范围 = MV_USB_DEVICE | MV_GIGE_DEVICE。
+
+    ⚠️ 这两个常量若取不到，退化成 0 之后枚举会"成功返回 0 个设备"——
+    看起来和"相机没插"一模一样，是个很难查的静默失败。所以这里显式报出来。
+    """
+    usb = _get(mvs, "MV_USB_DEVICE")
+    gige = _get(mvs, "MV_GIGE_DEVICE")
+    missing = [n for n, v in (("MV_USB_DEVICE", usb), ("MV_GIGE_DEVICE", gige))
+               if v is None]
+    if missing:
+        print(f"⚠ 当前 SDK 里取不到常量 {'、'.join(missing)}，枚举范围可能不完整。"
+              f"请在 backend.py 的 _enum_layer() 里按你的 SDK 版本核对。")
+    return (usb or 0) | (gige or 0)
 
 
 # ================================================================
@@ -145,7 +166,8 @@ class MockBackend:
                       (int(self._x) + 80, h // 2 + 40), (255, 255, 255), -1)
         return img
 
-    def read(self) -> Optional[Frame]:
+    def read(self, convert: bool = True) -> Optional[Frame]:
+        """mock 不做像素格式转换，convert 参数只为与真机后端保持同一签名。"""
         img = self._next_image()
         if img is None:
             return None
@@ -185,6 +207,31 @@ class MockBackend:
     def set_gain_db(self, db: float) -> None:
         print(f"  [mock] 忽略设置增益 {db} dB")
 
+    # ---- 与真机后端同名的桩，让上层代码不必分叉 ----
+
+    def set_enum_by_string(self, node: str, value: str) -> int:
+        print(f"  [mock] 忽略设置 {node}={value}")
+        return 0
+
+    def range_float(self, node: str):
+        if node == "ExposureTime":
+            return (5000.0, 9.0, 9998663.0)
+        if node == "Gain":
+            return (0.0, 0.0, 16.37)
+        return (None, None, None)
+
+    def read_float(self, node: str):
+        return self.range_float(node)[0]
+
+    def read_enum(self, node: str):
+        return 17301514 if node == "PixelFormat" else 0     # Bayer GB8
+
+    def read_int(self, node: str):
+        return 1280 if node == "Width" else (1024 if node == "Height" else 0)
+
+    def auto_expose_once(self, settle_s: float = 1.5) -> None:
+        print("  [mock] 忽略一键曝光")
+
 
 # ================================================================
 # MVS 后端
@@ -195,7 +242,12 @@ _MVS_IMPORT_ERROR: Optional[str] = None
 
 
 def _resolve_mvs_path() -> Optional[Path]:
-    """定位 MVS 安装目录。"""
+    """定位 MVS 安装目录。
+
+    除了环境变量与常见路径，还会扫一遍各盘符下的 MVS*/Hikrobot* 目录——
+    装在非默认位置很常见。**这一项只影响展示，不影响取帧**（DLL 由系统
+    PATH 解决，所以就算探测不到，相机照样能用），因此找不到不报错。
+    """
     env = os.environ.get("MVS_PATH")
     if env and Path(env).exists():
         return Path(env)
@@ -203,7 +255,46 @@ def _resolve_mvs_path() -> Optional[Path]:
         p = Path(cand)
         if p.exists():
             return p
+    patterns = ("/Program Files/MVS*", "/Program Files (x86)/MVS*",
+                "/Program Files/Hikrobot*", "/Program Files (x86)/Hikrobot*",
+                "/MVS*", "/Hikrobot*")
+    for drive in ("C:", "D:", "E:", "F:"):
+        for pat in patterns:
+            for hit in sorted(glob.glob(f"{drive}{pat}")):
+                q = Path(hit)
+                if q.is_dir():
+                    return q
     return None
+
+
+def _find_runtime_dir(mvs_path: Path) -> Optional[Path]:
+    """找 MvCameraControl.dll 所在的目录。
+
+    各版本 MVS 的目录布局不一样（`Runtime/Win64_x64`、`Development/Bin/...`
+    等等），所以先按已知布局猜，猜不中就在安装目录里搜 DLL——
+    **以 DLL 的实际位置为准**，比猜目录名可靠。搜索深度限在 4 层以内，
+    免得在几百 MB 的安装目录里全树遍历。
+    """
+    for rel in _RUNTIME_LAYOUTS:
+        p = mvs_path / rel
+        if p.is_dir():
+            return p
+    for pat in ("MvCameraControl.dll", "*/MvCameraControl.dll",
+                "*/*/MvCameraControl.dll", "*/*/*/MvCameraControl.dll"):
+        hits = sorted(mvs_path.glob(pat))
+        if hits:
+            return hits[0].parent
+    return None
+
+
+_RUNTIME_LAYOUTS = (
+    "Runtime/Win64_x64",
+    "Runtime/x64",
+    "Runtime/Win64",
+    "Development/Bin/Win64_x64",
+    "Development/Bin/x64",
+    "Bin/Win64_x64",
+)
 
 
 def _setup_sdk():
@@ -221,14 +312,15 @@ def _setup_sdk():
     mvs_path = _resolve_mvs_path()
     if mvs_path is not None:
         os.environ.setdefault("MVCAM_SDK_PATH", str(mvs_path))
-        runtime = mvs_path / "Runtime" / "Win64_x64"
-        os.environ.setdefault("MVCAM_COMMON_RUNENV", str(runtime))
-        # Python 3.8+ 必须显式登记 DLL 搜索目录，否则 MvCameraControl.dll 找不到
-        if runtime.exists() and hasattr(os, "add_dll_directory"):
-            try:
-                os.add_dll_directory(str(runtime))
-            except OSError:
-                pass
+        runtime = _find_runtime_dir(mvs_path)
+        if runtime is not None:
+            os.environ.setdefault("MVCAM_COMMON_RUNENV", str(runtime))
+            # Python 3.8+ 必须显式登记 DLL 搜索目录，否则 MvCameraControl.dll 找不到
+            if hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(str(runtime))
+                except OSError:
+                    pass
 
     # MvImport 目录：优先仓库根，其次 camera/ 下
     for cand in (config.REPO_ROOT / "MvImport",
@@ -278,7 +370,7 @@ class MvsBackend:
     def list_devices() -> List[Dict[str, object]]:
         mvs = _setup_sdk()
         dev_list = mvs.MV_CC_DEVICE_INFO_LIST()
-        layer = _get(mvs, "MV_USB_DEVICE", default=0) | _get(mvs, "MV_GIGE_DEVICE", default=0)
+        layer = _enum_layer(mvs)
         ret = mvs.MvCamera.MV_CC_EnumDevices(layer, dev_list)
         if ret != 0:
             raise CameraError(f"枚举设备失败，错误码 0x{ret:08x}")
@@ -309,10 +401,46 @@ class MvsBackend:
                 "index": i,
                 "型号": _chars(["chModelName"]),
                 "序列号": _chars(["chSerialNumber"]),
-                "版本": _chars(["chDeviceVersion"]),
+                "固件": _chars(["chDeviceVersion"]),
                 "接口": "USB3" if usb is not None else "GigE",
             })
         return out
+
+    @staticmethod
+    def diagnose() -> Dict[str, object]:
+        """SDK 层面的体检：不猜，把关键返回值直接打出来。
+
+        枚举不到设备时用它区分三种情况：
+          · 常量取不到 / layer == 0  → 我的枚举范围写错了（代码问题）
+          · ret != 0                 → SDK 报错，错误码可查 MvErrorDefine
+          · ret == 0 但设备数为 0    → SDK 认为总线上确实没有相机（硬件/驱动/线缆）
+        """
+        diag: Dict[str, object] = {}
+        try:
+            mvs = _setup_sdk()
+        except CameraError as exc:
+            return {"SDK 加载": f"失败 → {exc}"}
+
+        diag["SDK 加载"] = "成功（MvCameraControl 已导入，DLL 正常）"
+
+        layer = _enum_layer(mvs)
+        diag["枚举范围 layer"] = f"0x{layer:08x}"
+        if layer == 0:
+            diag["⚠ 提示"] = "layer 为 0，枚举必然返回空——这是代码问题，不是相机问题"
+
+        dev_list = mvs.MV_CC_DEVICE_INFO_LIST()
+        try:
+            ret = mvs.MvCamera.MV_CC_EnumDevices(layer, dev_list)
+            dev_list_ok = True
+        except Exception as exc:                  # noqa: BLE001
+            ret, dev_list_ok = -1, False
+            diag["枚举抛异常"] = repr(exc)
+
+        diag["MV_CC_EnumDevices"] = (
+            f"0x{ret:08x}" + ("（成功）" if ret == 0 else "（失败）"))
+        if dev_list_ok:
+            diag["设备数"] = _get(dev_list, "nDeviceNum", default="读不到")
+        return diag
 
     # ------------------------------------------------------------ 生命周期
 
@@ -321,7 +449,7 @@ class MvsBackend:
         self._mvs = mvs
 
         dev_list = mvs.MV_CC_DEVICE_INFO_LIST()
-        layer = _get(mvs, "MV_USB_DEVICE", default=0) | _get(mvs, "MV_GIGE_DEVICE", default=0)
+        layer = _enum_layer(mvs)
         ret = mvs.MvCamera.MV_CC_EnumDevices(layer, dev_list)
         if ret != 0:
             raise CameraError(f"枚举设备失败，错误码 0x{ret:08x}")
@@ -351,13 +479,25 @@ class MvsBackend:
             raise CameraError(f"CreateHandle 失败，错误码 0x{ret:08x}")
 
         access = _get(mvs, "MV_ACCESS_Exclusive", default=1)
-        ret = self._cam.MV_CC_OpenDevice(access, 0)
+        ret = None
+        for attempt in range(3):
+            ret = self._cam.MV_CC_OpenDevice(access, 0)
+            if ret == 0:
+                break
+            # 独占访问的释放有延迟：MVS 客户端刚关掉、或上一个进程刚退出时，
+            # 设备可能还挂在旧进程名下，等一两秒再试通常就好了。
+            wait = attempt + 1
+            print(f"  ⚠ 打开设备失败（0x{ret:08x}），{wait} 秒后重试…")
+            time.sleep(wait)
+
         if ret != 0:
             self._cam.MV_CC_DestroyHandle()
             self._cam = None
             raise CameraError(
-                f"打开设备失败，错误码 0x{ret:08x}。常见原因：相机被 MVS 客户端占用，"
-                "请先关闭 MVS 客户端再试。")
+                f"打开设备失败，错误码 0x{ret:08x}（已重试 3 次）。常见原因：\n"
+                "  · MVS 客户端还开着，独占占用了相机 → 关掉它\n"
+                "  · 上一个 python 进程没完全退出（关闭窗口不算退出）\n"
+                "  · 相机被掉电重启过，需要拔插一次 USB")
 
         # 连续采集模式：关掉触发
         trig_off = _get(mvs, "MV_TRIGGER_MODE_OFF", default=0)
@@ -381,15 +521,29 @@ class MvsBackend:
             except Exception as exc:              # noqa: BLE001
                 print(f"  ⚠ 设置 {key}={val} 失败：{exc!r}（请手动确认）")
 
-    def _get_payload_size(self) -> int:
+    def _get_int(self, node: str):
+        """读整型节点。结构与函数**必须配对**：
+
+            MVCC_INTVALUE_EX  ↔  MV_CC_GetIntValueEx
+            MVCC_INTVALUE     ↔  MV_CC_GetIntValue
+
+        配错时的典型现象：64 位字段读成 `(nMax << 32) | nCurValue`，
+        于是分辨率显示成 `5497558140160`（= 1280 × 2^32）这种怪数。
+        数据其实没错，只是被结构体错位搅坏了。
+        """
         mvs = self._mvs
-        if hasattr(self._cam, "MV_CC_GetIntValueEx"):
-            st = _get(mvs, "MVCC_INTVALUE_EX")()
-        else:
-            st = _get(mvs, "MVCC_INTVALUE")()
+        ex_cls = _get(mvs, "MVCC_INTVALUE_EX")
+        if ex_cls is not None and hasattr(self._cam, "MV_CC_GetIntValueEx"):
+            st = ex_cls()
+            self._cam.MV_CC_GetIntValueEx(node, st)
+            return _get(st, "nCurValue")
+        st = _get(mvs, "MVCC_INTVALUE")()
+        self._cam.MV_CC_GetIntValue(node, st)
+        return _get(st, "nCurValue")
+
+    def _get_payload_size(self) -> int:
         try:
-            self._cam.MV_CC_GetIntValue("PayloadSize", st)
-            return int(_get(st, "nCurValue", default=0))
+            return int(self._get_int("PayloadSize"))
         except Exception:                          # noqa: BLE001
             return 1280 * 1024 * 3
 
@@ -412,21 +566,75 @@ class MvsBackend:
 
     # ------------------------------------------------------------ 取帧
 
-    def _convert_param(self):
-        """像素格式转换参数结构体；不同 SDK 版本类名不同，做一次兼容。"""
-        if self._conv_param is not None:
-            return self._conv_param
-        mvs = self._mvs
-        cls = _get(mvs, "MV_CC_PIXEL_CONVERT_PARAM_EX") or \
-            _get(mvs, "MV_CC_PIXEL_CONVERT_PARAM")
-        if cls is None:
-            raise CameraError(
-                "SDK 里找不到像素格式转换参数结构体。请在 backend.py 的 "
-                "_convert_param() 里按你的 SDK 版本调整类名。")
-        self._conv_param = cls()
-        return self._conv_param
+    def _convert_to_bgr(self, src_buf, frame_len: int, w: int, h: int,
+                        src_pixel_type) -> np.ndarray:
+        """把一帧转成 BGR8。
 
-    def read(self) -> Optional[Frame]:
+        ⚠️ 和整型节点同理，结构体与函数**必须配对**：
+
+            MV_CC_PIXEL_CONVERT_PARAM_EX  ↔  MV_CC_ConvertPixelTypeEx
+            MV_CC_PIXEL_CONVERT_PARAM     ↔  MV_CC_ConvertPixelType
+
+        配错时 SDK 返回 **0x80000004（MV_E_PARAMETER）** —— 因为两者的
+        nWidth/nHeight 一个是 unsigned short、一个是 unsigned int，偏移对不上。
+        """
+        from ctypes import cast, POINTER, c_ubyte
+
+        mvs = self._mvs
+        dst_size = w * h * 3
+        dst_buf = (c_ubyte * dst_size)()
+
+        ex_cls = _get(mvs, "MV_CC_PIXEL_CONVERT_PARAM_EX")
+        use_ex = ex_cls is not None and hasattr(self._cam, "MV_CC_ConvertPixelTypeEx")
+        param_cls = ex_cls if use_ex else _get(mvs, "MV_CC_PIXEL_CONVERT_PARAM")
+        if param_cls is None:
+            raise CameraError("SDK 里找不到像素格式转换参数结构体。")
+
+        param = param_cls()
+        param.nWidth = w
+        param.nHeight = h
+        param.pSrcData = cast(src_buf, POINTER(c_ubyte))
+        param.nSrcDataLen = frame_len
+        param.enSrcPixelType = src_pixel_type
+        param.enDstPixelType = _get(mvs, "PixelType_Gvsp_BGR8_Packed")
+        param.pDstBuffer = cast(dst_buf, POINTER(c_ubyte))
+        param.nDstBufferSize = dst_size
+
+        ret = (self._cam.MV_CC_ConvertPixelTypeEx(param) if use_ex
+               else self._cam.MV_CC_ConvertPixelType(param))
+        if ret != 0:
+            raise CameraError(f"像素格式转换失败，错误码 0x{ret:08x}")
+
+        # nDstLen 只有 Ex 版参数才有；非 Ex 版目标长度就是 w*h*3
+        n_dst = int(_get(param, "nDstLen", default=dst_size) or dst_size)
+        img = np.frombuffer(dst_buf, dtype=np.uint8, count=n_dst)
+        return img.reshape(h, w, 3).copy()
+
+    def _fallback_bayer(self, src_buf, frame_len: int, w: int, h: int,
+                        src_pixel_type):
+        """保底路径：不走 SDK 转换，把原始字节直接当 Bayer8 读进来，
+        交给 OpenCV 去马赛克。SDK 转换 API 不通时靠它出图。"""
+        mvs = self._mvs
+        if src_pixel_type != _get(mvs, "PixelType_Gvsp_BayerGB8"):
+            return None                      # 只认 Bayer GB8，别的格式不乱猜
+        if frame_len < w * h:
+            return None
+        if not hasattr(cv2, "COLOR_BayerGB2BGR"):
+            return None
+        try:
+            raw = np.frombuffer(src_buf, dtype=np.uint8, count=w * h).reshape(h, w)
+            return cv2.cvtColor(raw, cv2.COLOR_BayerGB2BGR)
+        except Exception:                    # noqa: BLE001
+            return None
+
+    def read(self, convert: bool = True) -> Optional[Frame]:
+        """取一帧。
+
+        :param convert: False 时**跳过像素格式转换**，只把帧缓冲交还。
+                        用来区分"相机上限"和"端到端可达帧率"——
+                        转换是主机端开销，1.3MP 每帧都要走一遍，
+                        速度高时它会成为瓶颈。
+        """
         from ctypes import byref, cast, memmove, POINTER, c_ubyte
 
         mvs = self._mvs
@@ -443,31 +651,22 @@ class MvsBackend:
         ts_hi = _get(info, "nDevTimeStampHigh", default=0) or 0
         ts_lo = _get(info, "nDevTimeStampLow", default=0) or 0
 
+        img = None
         try:
-            src_buf = (c_ubyte * frame_len)()
-            memmove(byref(src_buf), st_out.pBufAddr, frame_len)
+            if convert:
+                src_buf = (c_ubyte * frame_len)()
+                memmove(byref(src_buf), st_out.pBufAddr, frame_len)
 
-            conv = self._convert_param()
-            dst_size = w * h * 3
-            dst_buf = (c_ubyte * dst_size)()
-            conv.nWidth = w
-            conv.nHeight = h
-            conv.pSrcData = cast(src_buf, POINTER(c_ubyte))
-            conv.nSrcDataLen = frame_len
-            conv.enSrcPixelType = _get(info, "enPixelType")
-            conv.enDstPixelType = _get(mvs, "PixelType_Gvsp_BGR8_Packed")
-            conv.pDstBuffer = cast(dst_buf, POINTER(c_ubyte))
-            conv.nDstBufferSize = dst_size
-
-            ret = self._cam.MV_CC_ConvertPixelType(conv)
-            if ret != 0:
-                raise CameraError(
-                    f"像素格式转换失败，错误码 0x{ret:08x}。"
-                    "若反复失败，先在 info 里确认像素格式（彩色款应为 Bayer GB8）。")
-
-            n_dst = int(_get(conv, "nDstLen", default=dst_size))
-            img = np.frombuffer(dst_buf, dtype=np.uint8, count=n_dst)
-            img = img.reshape(h, w, 3).copy()
+                src_pixel_type = _get(info, "enPixelType")
+                try:
+                    img = self._convert_to_bgr(src_buf, frame_len, w, h, src_pixel_type)
+                except CameraError as exc:
+                    # SDK 转换不通时不要卡死，用 OpenCV 去马赛克把图拿出来
+                    print(f"  ⚠ SDK 像素格式转换失败（{exc}），改用 OpenCV 去马赛克兜底…")
+                    img = self._fallback_bayer(src_buf, frame_len, w, h, src_pixel_type)
+                    if img is None:
+                        raise
+                    print("  ✓ 兜底成功。若一直走这条路，说明 SDK 转换 API 与结构体版本不匹配")
         finally:
             try:
                 self._cam.MV_CC_FreeImageBuffer(st_out)
@@ -508,10 +707,7 @@ class MvsBackend:
 
         def _int(node: str):
             try:
-                cls = _get(mvs, "MVCC_INTVALUE_EX") or _get(mvs, "MVCC_INTVALUE")
-                st = cls()
-                cam.MV_CC_GetIntValue(node, st)
-                return _get(st, "nCurValue")
+                return self._get_int(node)
             except Exception:                      # noqa: BLE001
                 return None
 
@@ -527,10 +723,10 @@ class MvsBackend:
         gain_c, gain_min, gain_max = _flt("Gain")
         d.update({
             "分辨率": f"{_int('Width')} × {_int('Height')}",
-            "像素格式(枚举值)": _enum("PixelFormat"),
+            "像素格式": pixel_format_name(_enum("PixelFormat")),
             "曝光时间": _fmt_range(exp_c, exp_min, exp_max, "μs"),
             "增益": _fmt_range(gain_c, gain_min, gain_max, "dB"),
-            "触发模式": _enum("TriggerMode"),
+            "触发模式": f"{_enum('TriggerMode')}（0 = 连续采集）",
             "Payload": f"{self._payload} 字节",
         })
         return d
@@ -543,13 +739,92 @@ class MvsBackend:
         self._cam.MV_CC_SetFloatValue("Gain", float(db))
         print(f"  [mvs] 增益设为 {db} dB")
 
+    # ---- 供 report / snap 使用：读参数、一键曝光 ----
+
+    def set_enum_by_string(self, node: str, value: str) -> int:
+        return self._cam.MV_CC_SetEnumValueByString(node, value)
+
+    def range_float(self, node: str):
+        """返回 (当前值, 最小值, 最大值)；读不到就返回 (None, None, None)。"""
+        try:
+            st = _get(self._mvs, "MVCC_FLOATVALUE")()
+            self._cam.MV_CC_GetFloatValue(node, st)
+            return (float(_get(st, "fCurValue", default=0.0)),
+                    float(_get(st, "fMin", default=0.0)),
+                    float(_get(st, "fMax", default=0.0)))
+        except Exception:                      # noqa: BLE001
+            return (None, None, None)
+
+    def read_float(self, node: str):
+        return self.range_float(node)[0]
+
+    def read_enum(self, node: str):
+        try:
+            st = _get(self._mvs, "MVCC_ENUMVALUE")()
+            self._cam.MV_CC_GetEnumValue(node, st)
+            return int(_get(st, "nCurValue", default=0))
+        except Exception:                      # noqa: BLE001
+            return None
+
+    def read_int(self, node: str):
+        """公开的整型读取；内部仍走配好对的 _get_int。"""
+        return self._get_int(node)
+
+    def auto_expose_once(self, settle_s: float = 1.5) -> None:
+        """一键曝光：让相机自动定一次曝光与增益，读回后锁死。
+
+        用途仅限**拍汇报样张**。实验采集绝不能用自动曝光——它会随光照自己
+        变，把"光照"和"相机调整"两个变量混在一起（这正是上学期手机的毛病）。
+        这里只是借用相机的自动功能快速拿到一个合理的曝光值。
+        """
+        try:
+            self.set_enum_by_string("ExposureAuto", "Once")
+            self.set_enum_by_string("GainAuto", "Once")
+        except Exception as exc:               # noqa: BLE001
+            print(f"  ⚠ 一键曝光不可用（{exc!r}），请改用 --exposure 手动给值")
+            return
+        time.sleep(settle_s)
+        for node in ("ExposureAuto", "GainAuto"):
+            try:
+                self.set_enum_by_string(node, "Off")   # 锁回去，防止继续自动调整
+            except Exception:                  # noqa: BLE001
+                pass
+
+
+def pixel_format_name(value) -> str:
+    """把 PixelFormat 枚举值翻成可读名字——靠 SDK 里的 Gvsp 常量反查，不写死数字。"""
+    if value is None:
+        return "读不到"
+    mvs = _MVS
+    if mvs is not None:
+        for n in ("Mono8", "Mono10", "Mono12", "BayerGR8", "BayerRG8",
+                  "BayerGB8", "BayerBG8", "RGB8_Packed", "BGR8_Packed"):
+            if _get(mvs, f"PixelType_Gvsp_{n}") == value:
+                return _PRETTY_PIXEL.get(n, n.replace("_", " "))
+    return f"0x{value:08x}"
+
+
+# 让名字好看一点：SDK 里是 BayerGB8，报告里写 Bayer GB8
+_PRETTY_PIXEL = {
+    "BayerGB8": "Bayer GB8", "BayerRG8": "Bayer RG8",
+    "BayerGR8": "Bayer GR8", "BayerBG8": "Bayer BG8",
+    "RGB8_Packed": "RGB 8", "BGR8_Packed": "BGR 8",
+}
+
+
+def _num(v) -> str:
+    """数值格式化：整数不带小数点，小数留两位。"""
+    if v is None:
+        return "—"
+    return f"{v:.0f}" if abs(v - round(v)) < 1e-6 else f"{v:.2f}"
+
 
 def _fmt_range(cur, lo, hi, unit: str) -> str:
     if cur is None:
         return "读不到"
     if lo is None or hi is None:
-        return f"{cur} {unit}"
-    return f"{cur} {unit}（范围 {lo} ~ {hi} {unit}）"
+        return f"{_num(cur)} {unit}"
+    return f"{_num(cur)} {unit}（范围 {_num(lo)} ~ {_num(hi)} {unit}）"
 
 
 # ================================================================

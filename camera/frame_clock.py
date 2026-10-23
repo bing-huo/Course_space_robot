@@ -29,11 +29,15 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Optional
 
-# 硬件时间戳可能的单位（秒），自检时在候选里取最近的一个
-_TS_UNIT_CANDIDATES = (1e-9, 1e-6, 1e-3)
+# 硬件时间戳可能的单位（秒），自检时在候选里取最近的一个。
+#
+# 2026-10-23 实测：本项目这台 MV-CU013-A0UC 的时间戳是 **10 ns/刻度**
+# （9.999e-9 s，88.5 fps 时约 1.13e6 刻度/帧）。原来的候选里没有 1e-8，
+# 自检会判失败并退回 1e-9，时间差整整差 10 倍且不报错——所以必须补上。
+_TS_UNIT_CANDIDATES = (1e-9, 1e-8, 1e-6, 1e-3)
 
 # 海康相机硬件时间戳的默认单位；单位测不出来时用它兜底
-_DEFAULT_TS_UNIT_S = 1e-9
+_DEFAULT_TS_UNIT_S = 1e-8
 
 
 @dataclass
