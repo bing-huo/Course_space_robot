@@ -51,7 +51,9 @@ python -m lighting.flicker_test -e 10000 -n 100          # 频闪测试
 
 ## 文档
 
-**入口：[docs/README.md](docs/README.md)**。最该先看的两份：
+**入口：[docs/README.md](docs/README.md)**。建议按顺序读：
 
-- [docs/光照系统实测与工作点.md](docs/光照系统实测与工作点.md) —— 实测数据与工作点
-- [docs/第二学期总纲.md](docs/第二学期总纲.md) —— 一页看懂本学期
+1. [docs/00_项目总览.md](docs/00_项目总览.md) —— 项目是什么、三个学期、当前状态
+2. [docs/01_核心算法说明.md](docs/01_核心算法说明.md) —— 流水线、公式、误差来源
+3. [docs/02_实验设计与测量协议.md](docs/02_实验设计与测量协议.md) —— 场地/光照/两项指标怎么测
+4. [docs/03_思考总结与展望.md](docs/03_思考总结与展望.md) —— 经验、弯路、第三学期建议
