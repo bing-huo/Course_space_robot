@@ -30,7 +30,7 @@ Course_space_robot/
 ├── lighting/       光照：频闪测试（flicker_test.py）
 ├── config.py       全局参数（几何、曝光、算法阈值）——物理结论的唯一来源
 ├── data/           数据归档（v1_baseline 两段视频；其余待采集）
-├── docs/           全部文档，入口见 docs/README.md
+├── docs/           全部文档：00–03 为总文档，s1/s2/s3 按学期归档
 ├── tools/          一次性脚本（仓库迁移、汇报示意图、15 s 录制）
 └── out/            运行产物（已 gitignore）
 ```
