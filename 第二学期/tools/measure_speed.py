@@ -66,6 +66,8 @@ def main(argv=None) -> int:
     ap.add_argument("--steady-min-s", type=float, default=config.STEADY_MIN_DURATION_S)
     ap.add_argument("--alpha", type=float, default=0.15)
     ap.add_argument("--beta", type=float, default=0.005)
+    ap.add_argument("--plane-scale", type=float, default=None,
+                    help="覆盖等效平面修正；给 1.0 可看未修正的原始速度")
     ap.add_argument("--log", default="", help="逐帧日志输出 csv（可选）")
     args = ap.parse_args(argv)
 
@@ -113,7 +115,7 @@ def main(argv=None) -> int:
         print("✗ 检出帧太少")
         return 1
 
-    ks = config.PLANE_SCALE          # 跟踪面修正（见 config 说明）
+    ks = config.PLANE_SCALE if args.plane_scale is None else args.plane_scale
     wx = np.array([to_world(H_inv, r["u"], r["v"])[0] for r in det]) * ks
     wy = np.array([to_world(H_inv, r["u"], r["v"])[1] for r in det]) * ks
     t = np.array([r["t"] for r in det])
