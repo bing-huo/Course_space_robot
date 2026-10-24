@@ -66,6 +66,9 @@ def main(argv=None) -> int:
     ap.add_argument("--dx", type=float, required=True, help="板第 0 内角点的区域 x（cm）")
     ap.add_argument("--dy", type=float, required=True, help="板第 0 内角点的区域 y（cm）")
     ap.add_argument("--region", default="78x60", help="区域尺寸 cm，如 78x60")
+    ap.add_argument("--square-cm", type=float, default=SQ_CM,
+                    help="标定板实际格长（cm）。默认 1.5（=15 mm）；"
+                         "若打印尺寸不准，用直尺量 10 格跨度除以 10 填这里")
     ap.add_argument("--out", default="calibration/calibration_config.json")
     ap.add_argument("--overlay", default="out/calib_overlay.png")
     args = ap.parse_args(argv)
@@ -80,7 +83,8 @@ def main(argv=None) -> int:
         print("✗ 没检出完整棋盘：板不在画面 / 缺角 / 曝光不足")
         return 1
     cols, rows = pattern
-    obj = np.array([[c * SQ_CM, r * SQ_CM]
+    sq = args.square_cm
+    obj = np.array([[c * sq, r * sq]
                     for r in range(rows) for c in range(cols)], np.float64)
 
     H_board, mask = cv2.findHomography(obj, pts, cv2.RANSAC, 2.0)
@@ -103,7 +107,7 @@ def main(argv=None) -> int:
         print("  ⚠ H 的 2×2 行列式为负：角点顺序可能是镜像，请把板转 180° 重拍或检查 dx/dy")
 
     # 板四角世界坐标（用于和卷尺比对）
-    w, h = (cols - 1) * SQ_CM, (rows - 1) * SQ_CM
+    w, h = (cols - 1) * sq, (rows - 1) * sq
     corners = np.array([[0, 0], [w, 0], [w, h], [0, h]])
     print("  板内角点四角在区域坐标系下的位置（应与你量的板位置一致）：")
     for name, p in zip(("左上", "右上", "右下", "左下"), corners):
