@@ -107,8 +107,11 @@ def main(argv=None) -> int:
     ap.add_argument("--area-min", type=float, default=config.CONTOUR_AREA_MIN)
     ap.add_argument("--outdir", default="out/render")
     ap.add_argument("--arrow-s", type=float, default=0.30, help="速度矢量代表的时长（s）")
+    ap.add_argument("--plane-scale", type=float, default=None,
+                    help="覆盖等效平面修正；给 1.0 可看未修正效果")
     args = ap.parse_args(argv)
 
+    ks = config.PLANE_SCALE if args.plane_scale is None else args.plane_scale
     H, H_inv = load_H(args.calib)
     cap = cv2.VideoCapture(args.video)
     if not cap.isOpened():
@@ -142,8 +145,8 @@ def main(argv=None) -> int:
         else:
             _, u, v = res
             wx, wy = to_world(H_inv, u, v)
-            wx *= config.PLANE_SCALE
-            wy *= config.PLANE_SCALE
+            wx *= ks
+            wy *= ks
             rec.append((t, True, area, u, v, wx, wy))
         i += 1
     cap.release()
@@ -223,9 +226,9 @@ def main(argv=None) -> int:
             if j is not None:
                 v_now = float(V[j])
                 # 速度矢量：当前世界点 → 0.30 s 后的点
-                x0, y0 = world_to_px(H, wx[j], wy[j], config.PLANE_SCALE)
+                x0, y0 = world_to_px(H, wx[j], wy[j], ks)
                 x1, y1 = world_to_px(H, wx[j] + VX[j] * args.arrow_s,
-                                     wy[j] + VY[j] * args.arrow_s, config.PLANE_SCALE)
+                                     wy[j] + VY[j] * args.arrow_s, ks)
                 cv2.arrowedLine(img, (int(x0), int(y0)), (int(x1), int(y1)),
                                 (0, 140, 255), 3, tipLength=0.28)
                 cv2.putText(img, f"v={v_now:.1f} cm/s (ab)", (int(x1) + 6, int(y1) - 6),
@@ -262,7 +265,7 @@ def main(argv=None) -> int:
     ax[0, 0].plot(wx[s:e+1], wy[s:e+1], "-", lw=3, color="#2ca02c", alpha=0.7,
                   label="steady window")
     ax[0, 0].set_xlabel("X (cm)"); ax[0, 0].set_ylabel("Y (cm)")
-    ax[0, 0].set_title("Trajectory (plane-corrected)")
+    ax[0, 0].set_title(f"Trajectory ({'plane-corrected' if ks != 1.0 else 'raw geometry'})")
     ax[0, 0].legend(loc="best"); ax[0, 0].grid(alpha=0.3)
 
     ax[0, 1].plot(t, wx, lw=1.2, color="#1f77b4", label="X")
