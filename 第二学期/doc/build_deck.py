@@ -164,6 +164,28 @@ def stat_card(slide, x, y, w, h, value, unit, label, accent=BLUE):
     return tb
 
 
+def metric_strip(slide, x, y, w, h, items):
+    """横向指标条：items = [(value, label, color), ...]，颜色区分"""
+    _rect(slide, x, y, w, h, CARD_FILL, CARD_LINE)
+    n = len(items)
+    seg = w / n
+    for i, (value, label, color) in enumerate(items):
+        if i > 0:
+            _rect(slide, x + seg * i, y + 0.3, 0.03, h - 0.6, CARD_LINE, rounded=False)
+        tb = slide.shapes.add_textbox(Cm(x + seg * i), Cm(y), Cm(seg), Cm(h))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        r = p.add_run(); r.text = value
+        set_font(r, 20, True, color)
+        p2 = tf.add_paragraph()
+        p2.alignment = PP_ALIGN.CENTER
+        r = p2.add_run(); r.text = label
+        set_font(r, 11, False, GRAY)
+
+
 def banner(slide, x, y, w, h, text, fill, accent, tcolor, size=13.5):
     _rect(slide, x, y, w, h, fill, None)
     _rect(slide, x + 0.12, y + 0.28, 0.13, h - 0.56, accent, rounded=False)
@@ -270,9 +292,11 @@ class Builder:
     # ---------------- 一、实验平台 ----------------
     def platform(self):
         s = self.new_slide("一、实验平台")
-        stat_card(s, 0.9, 2.5, 8.3, 3.1, "143", "cm", "镜头 → 桌面")
-        stat_card(s, 9.55, 2.5, 8.3, 3.1, "113.5", "cm", "标定面工作距离 WD")
-        stat_card(s, 18.2, 2.5, 8.3, 3.1, "87.2×69.7", "cm", "视野（测量区 77×60）")
+        metric_strip(s, 0.9, 2.4, 32.0, 2.3, [
+            ("143 cm", "镜头 → 桌面", BLUE),
+            ("113.5 cm", "标定面工作距离 WD", GREEN),
+            ("87.2 × 69.7 cm", "视野（测量区 77×60）", ORANGE),
+        ])
 
         data = [
             ["项目", "参数"],
@@ -283,14 +307,17 @@ class Builder:
             ["曝光 / 光圈 / 增益", "10 ms｜F2.8｜6 dB"],
             ["标定板", "Q12-200-15（200×200，格 15 mm）"],
         ]
-        table(s, 0.9, 6.2, 16.4, 9.9, data, col_w=[5.4, 11.0], fsize=12,
+        table(s, 0.9, 5.2, 16.4, 10.6, data, col_w=[5.4, 11.0], fsize=12,
               first_col_bold=True)
 
-        picture(s, BASE / "1792846636855.jpg", 18.2, 6.2, 7.6, 5.7)
-        picture(s, BASE / "1792846636840.jpg", 26.3, 6.2, 7.6, 5.7)
-        textbox(s, 18.2, 12.1, 15.7, 1.6,
+        picture(s, BASE / "1792846636855.jpg", 18.2, 5.2, 7.6, 5.7)
+        picture(s, BASE / "1792846636840.jpg", 26.3, 5.2, 7.6, 5.7)
+        textbox(s, 18.2, 11.1, 15.7, 1.4,
                 "两盏工作灯分列两侧，相机三脚架固定在桌面正上方；\n"
                 "地面暂用白桌，后续铺黑底布突出白色桁架。", size=S_CAP, color=GRAY)
+        accent_card(s, 18.2, 12.7, 15.7, 3.4, "本阶段平台状态",
+                    "相机、镜头、光源、机位已固定；曝光/光圈/增益锁定\n"
+                    "标定板、桁架、小车到位", tsize=14, bsize=11.5)
         self.notes(s, "平台关键尺寸：镜头到桌面 143 cm，标定面 WD 113.5 cm，"
                       "桁架底部 12 cm、高 14 cm。")
 
@@ -308,7 +335,7 @@ class Builder:
                     "④ SB 角点检测：88 个内角点\n"
                     "⑤ RANSAC 求单应 H（cm → px）\n"
                     "⑥ 5 cm 网格叠加 + 重投影校验")
-        picture(s, ROOT / "第二学期/out/calib_overlay.png", 17.2, 2.5, 15.6, 10.8)
+        picture(s, BASE / "fig_calib.png", 17.2, 2.5, 15.6, 10.8)
         stat_card(s, 17.2, 13.6, 7.6, 2.4, "0.042", "px", "重投影 RMS")
         textbox(s, 25.1, 13.7, 7.8, 2.2,
                 "px/cm 14.67（X）/ 14.70（Y）\nWD 113.5 cm｜测量区 77 × 60 cm",
@@ -333,20 +360,18 @@ class Builder:
             if i < len(steps) - 1:
                 arrow(s, x + 4.35, 2.83, 0.75, 0.55)
             x += 5.1
-        textbox(s, 0.9, 4.0, 31.5, 0.8,
-                "V2.1 = 第一学期算法直接迁移：纯 MOG2 前景 → 最大轮廓，不做任何亮度筛选。",
-                size=S_BODY2, color=GRAY)
-        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v21.png", 0.9, 5.0, 15.6, 10.4)
-        accent_card(s, 17.3, 5.0, 15.6, 7.0, "效果（未修正）",
-                    "21 cm/s → 14.7（误差 −29.8%）\n"
-                    "30 cm/s → 19.6（误差 −34.6%）\n"
-                    "失败率 19.6% / 36.1%（指标 ≤15%）\n"
-                    "原因：深阴影被 MOG2 判成前景，轮廓粘连、质心被拖偏；\n"
-                    "阴影随目标一起动，污染的是质心位置，不是运动本身。",
-                    accent=RED)
-        banner(s, 17.3, 12.6, 15.6, 2.8,
-               "V2.1 不可用：速度误差与失败率都超标，必须先解决阴影。",
-               "FDECEC", RED, RED, size=13.5)
+        textbox(s, 0.9, 3.95, 31.8, 0.8,
+                "V2.1 = 第一学期算法直接迁移：纯 MOG2 前景 → 最大轮廓；阴影被并成前景，"
+                "失败率 19.6%/36.1%、误差 −29.8%/−34.6%，不可用。",
+                size=S_BODY2, color=RED, bold=True)
+        picture(s, BASE / "fig_shadow.png", 0.9, 4.9, 15.0, 9.8)
+        textbox(s, 0.9, 14.85, 15.0, 0.9,
+                "运行画面：桁架右后方是强光投下的长阴影（MOG2 会把它当成前景）",
+                size=S_CAP, color=GRAY, align=PP_ALIGN.CENTER)
+        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v21.png", 16.6, 4.9, 16.2, 9.8)
+        textbox(s, 16.6, 14.85, 16.2, 0.9,
+                "V2.1 效果：轨迹跳变、速度震荡、失败率 19.6%",
+                size=S_CAP, color=GRAY, align=PP_ALIGN.CENTER)
         self.notes(s, "V2.1 失败率 19.6%/36.1%，误差 −29.8%/−34.6%，阴影是主因。")
 
     # ---------------- 四、算法改进（上） ----------------
