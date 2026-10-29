@@ -294,8 +294,8 @@ class Builder:
         s = self.new_slide("一、实验平台")
         metric_strip(s, 0.9, 2.4, 32.0, 2.3, [
             ("143 cm", "镜头 → 桌面", BLUE),
-            ("113.5 cm", "标定面工作距离 WD", GREEN),
-            ("87.2 × 69.7 cm", "视野（测量区 77×60）", ORANGE),
+            ("117 cm", "标定面 WD（143 − 26）", GREEN),
+            ("87.2 × 69.7 cm", "视野（测量区 77 × 60）", ORANGE),
         ])
 
         data = [
@@ -307,8 +307,11 @@ class Builder:
             ["曝光 / 光圈 / 增益", "10 ms｜F2.8｜6 dB"],
             ["标定板", "Q12-200-15（200×200，格 15 mm）"],
         ]
-        table(s, 0.9, 5.2, 16.4, 10.6, data, col_w=[5.4, 11.0], fsize=12,
+        table(s, 0.9, 5.2, 16.4, 10.4, data, col_w=[5.4, 11.0], fsize=12,
               first_col_bold=True)
+        textbox(s, 0.9, 15.75, 16.4, 0.8,
+                "注：标定板反算 WD 113.5 cm，与几何 117 cm 差 3%（焦距标称误差），不影响单应 H。",
+                size=10, color=GRAY)
 
         picture(s, BASE / "1792846636855.jpg", 18.2, 5.2, 7.6, 5.7)
         picture(s, BASE / "1792846636840.jpg", 26.3, 5.2, 7.6, 5.7)
@@ -318,8 +321,8 @@ class Builder:
         accent_card(s, 18.2, 12.7, 15.7, 3.4, "本阶段平台状态",
                     "相机、镜头、光源、机位已固定；曝光/光圈/增益锁定\n"
                     "标定板、桁架、小车到位", tsize=14, bsize=11.5)
-        self.notes(s, "平台关键尺寸：镜头到桌面 143 cm，标定面 WD 113.5 cm，"
-                      "桁架底部 12 cm、高 14 cm。")
+        self.notes(s, "平台关键尺寸：镜头到桌面 143 cm，桁架顶面 26 cm，几何 WD = 117 cm；"
+                      "标定板反算 113.5 cm，差 3% 来自焦距标称误差，不影响 H。")
 
     # ---------------- 二、相机标定 ----------------
     def calibration(self):
@@ -329,60 +332,77 @@ class Builder:
                     "方格 15 mm，12 × 9 格 → OpenCV 内角点 11 × 8\n"
                     "玻璃基板，DFOPTIX")
         accent_card(s, 0.9, 7.6, 15.4, 8.3, "标定流程",
-                    "① 相机固定、调焦（WD ≈ 113 cm）\n"
+                    "① 相机固定、调焦（WD ≈ 117 cm）\n"
                     "② 标定板置于桁架顶面（跟踪面）\n"
                     "③ 采集图像，板面不反光\n"
                     "④ SB 角点检测：88 个内角点\n"
                     "⑤ RANSAC 求单应 H（cm → px）\n"
                     "⑥ 5 cm 网格叠加 + 重投影校验")
-        picture(s, BASE / "fig_calib.png", 17.2, 2.5, 15.6, 10.8)
-        stat_card(s, 17.2, 13.6, 7.6, 2.4, "0.042", "px", "重投影 RMS")
-        textbox(s, 25.1, 13.7, 7.8, 2.2,
-                "px/cm 14.67（X）/ 14.70（Y）\nWD 113.5 cm｜测量区 77 × 60 cm",
-                size=S_CAP, color=GRAY, anchor=MSO_ANCHOR.MIDDLE)
-        self.notes(s, "标定板内角点 11×8，88 点，RMS 0.042 px；单应把像素映射到 cm。")
+        picture(s, BASE / "fig_calib.png", 17.2, 2.5, 15.6, 10.2)
+        stat_card(s, 17.2, 13.0, 7.6, 2.3, "0.042", "px", "重投影 RMS")
+        stat_card(s, 25.1, 13.0, 7.8, 2.3, "14.67", "px/cm", "像素尺度（X）")
+        banner(s, 17.2, 15.5, 15.7, 1.1,
+               "标定结果：88 / 88 个内角点全部检出", "E9F5E9", GREEN, GREEN, size=13)
+        self.notes(s, "标定结果要强调：88 个内角点全部检出，重投影 RMS 0.042 px，14.67 px/cm。")
 
     # ---------------- 三、算法移植 ----------------
     def v21(self):
         s = self.new_slide("三、算法移植")
-        steps = ["相机取流", "灰度 + MOG2", "形态学 + 单轮廓", "图像矩质心", "单应 H", "差分 + αβ"]
+        steps = [
+            ("相机取流", "时间戳 + FrameID"),
+            ("灰度 + 背景建模", "MOG2，history=500"),
+            ("形态学开/闭", "5×5 椭圆核"),
+            ("最大轮廓", "面积 ≥ 阈值"),
+            ("图像矩质心", "m10/m00"),
+            ("单应 H", "cm → px"),
+            ("速度", "差分 + αβ"),
+        ]
         x = 0.9
-        for i, st in enumerate(steps):
-            shp = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Cm(x), Cm(2.4), Cm(4.3), Cm(1.4))
+        for i, (st, sub) in enumerate(steps):
+            shp = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Cm(x), Cm(2.3),
+                                     Cm(4.1), Cm(2.0))
             shp.adjustments[0] = 0.12
             shp.fill.solid(); shp.fill.fore_color.rgb = RGBColor.from_string(STAT_FILL)
             shp.line.color.rgb = RGBColor.from_string(CARD_LINE)
             tf = shp.text_frame
+            tf.word_wrap = True
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
             p = tf.paragraphs[0]; p.alignment = PP_ALIGN.CENTER
             r = p.add_run(); r.text = st
-            set_font(r, 12.5, True, DARK)
+            set_font(r, 11, True, DARK)
+            p2 = tf.add_paragraph(); p2.alignment = PP_ALIGN.CENTER
+            r = p2.add_run(); r.text = sub
+            set_font(r, 9, False, GRAY)
             if i < len(steps) - 1:
-                arrow(s, x + 4.35, 2.83, 0.75, 0.55)
-            x += 5.1
-        textbox(s, 0.9, 3.95, 31.8, 0.8,
-                "V2.1 = 第一学期算法直接迁移：纯 MOG2 前景 → 最大轮廓；阴影被并成前景，"
-                "失败率 19.6%/36.1%、误差 −29.8%/−34.6%，不可用。",
-                size=S_BODY2, color=RED, bold=True)
-        picture(s, BASE / "fig_shadow.png", 0.9, 4.9, 15.0, 9.8)
-        textbox(s, 0.9, 14.85, 15.0, 0.9,
-                "运行画面：桁架右后方是强光投下的长阴影（MOG2 会把它当成前景）",
-                size=S_CAP, color=GRAY, align=PP_ALIGN.CENTER)
-        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v21.png", 16.6, 4.9, 16.2, 9.8)
-        textbox(s, 16.6, 14.85, 16.2, 0.9,
+                arrow(s, x + 4.15, 3.05, 0.35, 0.45)
+            x += 4.6
+        banner(s, 0.9, 4.75, 31.9, 1.55,
+               "V2.1：把第一学期算法直接搬到工业相机上，没有针对强光做任何处理。\n"
+               "问题：单侧强光投下长阴影，背景差分分不清“影子”和“目标”，整块并成前景 → 质心被拖偏、轨迹跳变。",
+               "FDECEC", RED, RED, size=11.5)
+        picture(s, BASE / "fig_shadow.png", 0.9, 6.5, 15.2, 8.3)
+        textbox(s, 0.9, 14.85, 15.2, 0.6,
+                "运行画面：桁架右后方的长阴影", size=S_CAP, color=GRAY,
+                align=PP_ALIGN.CENTER)
+        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v21.png",
+                16.5, 6.5, 16.2, 8.3)
+        textbox(s, 16.5, 14.85, 16.2, 0.6,
                 "V2.1 效果：轨迹跳变、速度震荡、失败率 19.6%",
                 size=S_CAP, color=GRAY, align=PP_ALIGN.CENTER)
-        self.notes(s, "V2.1 失败率 19.6%/36.1%，误差 −29.8%/−34.6%，阴影是主因。")
+        textbox(s, 0.9, 15.55, 31.9, 1.0,
+                "注：失败率 = 统计窗内未检出帧数 ÷ 统计窗总帧数；统计窗 = 目标首次检出到末次检出。",
+                size=10, color=GRAY)
+        self.notes(s, "V2.1 的流程、问题和失败率定义都在这页：阴影被并成前景，失败率 19.6%/36.1%，误差 −29.8%/−34.6%。")
 
     # ---------------- 四、算法改进（上） ----------------
     def v22(self):
         s = self.new_slide("四、算法改进")
         items = [
-            ("曝光优先", "10 ms 锁定一个 100 Hz 周期，消除频闪"),
-            ("亮度门限", "前景 = 运动 ∧ 够亮（桁架 177 / 阴影 <50 / 背景 83）"),
-            ("自适应阈值", "中位 + 0.5×(P95 − 中位)，换光照不用改常数"),
-            ("阴影检测", "MOG2 shadowThreshold 调整（辅助手段）"),
-            ("灯位与遮光", "双灯对称、避免直射镜头（硬件层）"),
+            ("① 先管曝光", "把快门定在 10 ms，正好一个灯的闪烁周期，画面不再忽明忽暗"),
+            ("② 只留“又亮又在动”的", "影子比目标暗，这一条直接把它筛掉"),
+            ("③ 门槛跟着亮度自动调", "换灯、换距离都不用改数字"),
+            ("④ 让背景模型学会认影子", "调一个参数，让它把影子当背景（辅助手段）"),
+            ("⑤ 把两盏灯摆对称", "从源头减少影子，也避免直射镜头"),
         ]
         y = 2.5
         for i, (t, b) in enumerate(items):
@@ -390,27 +410,30 @@ class Builder:
             y += 2.5
         textbox(s, 0.9, 15.0, 13.6, 0.7,
                 "参考 codex 分支《强光目标检测与跟踪算法调研》", size=S_CAP, color=GRAY)
-        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v22.png", 14.9, 2.5, 14.1, 9.4)
+        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v22.png",
+                14.9, 2.5, 14.1, 9.4)
         banner(s, 14.9, 12.3, 18.0, 3.9,
-               "V2.2：固定亮度门限 100\n失败率 0%（19.6% → 0%），但速度仍偏低 11%\n"
+               "V2.2：加一条“够亮才算目标”的规则\n"
+               "失败率 0%（19.6% → 0%），但速度仍偏低 11%\n"
                "21→18.6（−11.6%）｜30→26.6（−11.2%）",
                "FDECEC", RED, RED, size=12.5)
-        self.notes(s, "V2.2 加固定门限：失败率 0%，但速度误差仍有 ~11%。")
+        self.notes(s, "V2.2 用大白话讲：曝光挡频闪、亮度筛影子；失败率归零，但速度仍偏低 11%。")
 
     # ---------------- 四、算法改进（下） ----------------
     def v23(self):
         s = self.new_slide("四、算法改进")
         items = [
-            ("自适应门限", "随画面亮度自动跟随，为 L0–L4 准备"),
-            ("Alpha-Beta", "α=0.15、β=0.005，替代逐帧差分"),
-            ("自动稳态窗", "目标完全在 ROI 内 + ±15% + 连续 ≥1.0 s"),
-            ("逐帧日志", "记录每帧检出/面积/坐标，支撑失败率统计"),
+            ("① 门槛自动跟着亮度走", "换光照等级不用改参数"),
+            ("② 把速度抖动静下来", "连续几帧加权，曲线更平滑"),
+            ("③ 自动挑“稳定的一段”", "不再人工截取，谁来算都一样"),
+            ("④ 每帧记一笔", "失败率、面积都能事后统计"),
         ]
         y = 2.5
         for i, (t, b) in enumerate(items):
             accent_card(s, 0.9, y, 12.8, 2.3, t, b)
             y += 2.5
-        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v23.png", 14.2, 2.5, 13.5, 9.0)
+        picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v23.png",
+                14.2, 2.5, 13.5, 9.0)
         data = [
             ["版本", "21 cm/s", "30 cm/s", "失败率"],
             ["V2.1", "14.7", "19.6", "19.6/36.1%"],
@@ -420,9 +443,9 @@ class Builder:
         table(s, 0.9, 13.0, 12.8, 3.4, data, col_w=[2.6, 3.0, 3.0, 4.2], fsize=11.5,
               first_col_bold=True)
         banner(s, 14.2, 13.0, 18.7, 3.4,
-               "V2.2 → V2.3 只变 ≤2%：算法改进对 ~11% 误差没有影响 → 转向几何排查。",
+               "V2.2 → V2.3 只差 ≤2%：算法不是那 ~11% 误差的原因 → 去查几何。",
                "FFF6D9", "BF9000", "7F6000", size=13)
-        self.notes(s, "V2.3 加自适应门限/αβ/稳态窗，但相对 V2.2 只差 ≤2%，证明误差不是算法造成的。")
+        self.notes(s, "V2.3 的改进用大白话：门槛自适应、速度平滑、自动挑稳定段、逐帧记账；对误差影响 ≤2%。")
 
     # ---------------- 五、误差分析（上） ----------------
     def exclude(self):
@@ -498,31 +521,22 @@ class Builder:
     def future(self):
         s = self.new_slide("七、后续规划")
         items = [
-            ("多光照等级", "L0–L4，双灯到区域中心\n距离分级，记录灯位与参数"),
-            ("重复采集", "每档 3 次\n保证结果可复现"),
-            ("退化分析", "速度误差 / 失败率\n随光照等级的退化曲线"),
-            ("成果整理", "报告、代码、数据、演示\n形成本学期完整交付"),
+            ("① 多光照等级实验", "按不同光照强度各跑一组"),
+            ("② 结果分析对比", "比较各等级下的速度误差与失败率"),
+            ("③ 成果整理", "报告、代码、数据、演示"),
         ]
         x = 0.9
         for i, (t, b) in enumerate(items):
-            num = f"0{i+1}"
-            card_x = x
-            accent_card(s, card_x, 2.7, 7.2, 4.5, f"{num}  {t}", b)
-            x += 8.1
+            accent_card(s, x, 2.6, 9.6, 4.2, t, b)
+            x += 10.9
             if i < len(items) - 1:
-                arrow(s, card_x + 7.25, 4.65, 0.8, 0.55)
-        accent_card(s, 0.9, 7.9, 16.0, 4.5, "近期动作",
-                    "黑布到位后重标（背景变黑）\n"
-                    "→ 实时版 main_v2\n"
-                    "→ L0–L4 十组正式实验")
-        accent_card(s, 17.3, 7.9, 15.6, 4.5, "验收口径",
-                    "指标 1：强光（L2）下稳态速度相对误差 ≤20%\n"
-                    "指标 2：检测失败率 ≤15%（L0–L2）\n"
-                    "L3/L4 只记录现象、不参与判定", accent=GREEN)
-        banner(s, 0.9, 12.9, 32.0, 2.4,
-               "本周：相机标定 + 三版算法迁移/改进 + 等效平面误差定位与补偿；下周进入多光照等级实验。",
-               "E9F5E9", GREEN, GREEN, size=13)
-        self.notes(s, "后续：多光照等级实验、重复采集、退化曲线、成果整理。")
+                arrow(s, x - 1.05, 4.25, 0.8, 0.55)
+        accent_card(s, 0.9, 7.8, 31.9, 8.2, "验收指标",
+                    "① 速度：各光照等级下，稳态速度相对误差 ≤ 20%\n"
+                    "② 失败率：检测失败率 ≤ 15%\n"
+                    "    失败率 = 统计窗内未检出帧数 ÷ 统计窗总帧数（目标首次检出 → 末次检出）",
+                    tsize=16, bsize=14)
+        self.notes(s, "后续只做三件事：多光照等级实验、结果分析对比、成果整理；验收两项指标。")
 
     def build(self):
         self.platform()
