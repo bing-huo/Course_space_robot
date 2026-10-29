@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+import os
+
 import copy
 from pathlib import Path
 
@@ -27,8 +29,8 @@ from pptx.util import Cm, Pt
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE.parent.parent
-OUT = BASE / "视觉算法组_周汇报_10.30.pptx"
-TEMPLATE = BASE / "视觉算法组10.30.pptx"
+OUT = Path(os.environ.get("DECK_OUT", str(BASE / "视觉算法组_周汇报_10.30.pptx")))
+TEMPLATE = Path(os.environ.get("DECK_TEMPLATE", str(BASE / "视觉算法组10.30.pptx")))
 
 BLUE = "0D63B1"
 DARK = "1F3864"
@@ -262,6 +264,7 @@ def arrow(slide, x, y, w=0.9, h=0.5, color=BLUE):
 class Builder:
     def __init__(self):
         self.prs = Presentation(str(TEMPLATE))
+        self.n_orig = len(self.prs.slides)
         self.base = self.prs.slides[0]
         self.layout = self.prs.slide_masters[0].slide_layouts[6]  # BLANK
 
@@ -398,39 +401,58 @@ class Builder:
     def v22(self):
         s = self.new_slide("四、算法改进")
         items = [
-            ("① 先管曝光", "把快门定在 10 ms，正好一个灯的闪烁周期，画面不再忽明忽暗"),
-            ("② 只留“又亮又在动”的", "影子比目标暗，这一条直接把它筛掉"),
-            ("③ 门槛跟着亮度自动调", "换灯、换距离都不用改数字"),
-            ("④ 让背景模型学会认影子", "调一个参数，让它把影子当背景（辅助手段）"),
-            ("⑤ 把两盏灯摆对称", "从源头减少影子，也避免直射镜头"),
+            ("① 曝光优先",
+             "通俗：把快门定在 10 ms，正好一个灯的闪烁周期，画面不再忽明忽暗\n"
+             "术语：曝光时间 = 100 Hz 周期的整数倍，消除频闪"),
+            ("② 亮度门限",
+             "通俗：影子比目标暗，只留“又亮又在动”的\n"
+             "术语：前景 = 运动 ∧ 灰度 ≥ 阈值（桁架 177 / 阴影 <50 / 背景 83）"),
+            ("③ 自适应阈值",
+             "通俗：门槛跟着画面亮度自己走，换灯不用改数字\n"
+             "术语：阈值 = 中位灰度 + 0.5×(P95 − 中位)"),
+            ("④ 阴影检测",
+             "通俗：让背景模型把影子当背景（辅助手段）\n"
+             "术语：MOG2 shadowThreshold 调整"),
+            ("⑤ 灯位与遮光",
+             "通俗：两盏灯左右对称、别直射镜头\n"
+             "术语：双灯对称、入射角 ≥30°，从源头减少阴影"),
         ]
         y = 2.5
         for i, (t, b) in enumerate(items):
-            accent_card(s, 0.9, y, 13.6, 2.3, t, b, accent=BLUE if i < 3 else ORANGE)
+            accent_card(s, 0.9, y, 13.6, 2.3, t, b, accent=BLUE if i < 3 else ORANGE,
+                        bsize=10.5)
             y += 2.5
         textbox(s, 0.9, 15.0, 13.6, 0.7,
                 "参考 codex 分支《强光目标检测与跟踪算法调研》", size=S_CAP, color=GRAY)
         picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v22.png",
                 14.9, 2.5, 14.1, 9.4)
         banner(s, 14.9, 12.3, 18.0, 3.9,
-               "V2.2：加一条“够亮才算目标”的规则\n"
+               "V2.2：加一条“够亮才算目标”的规则（亮度门限）\n"
                "失败率 0%（19.6% → 0%），但速度仍偏低 11%\n"
                "21→18.6（−11.6%）｜30→26.6（−11.2%）",
                "FDECEC", RED, RED, size=12.5)
-        self.notes(s, "V2.2 用大白话讲：曝光挡频闪、亮度筛影子；失败率归零，但速度仍偏低 11%。")
+        self.notes(s, "V2.2 每项都给“术语 + 通俗”两行：曝光挡频闪、亮度筛影子；失败率归零，速度仍偏低 11%。")
 
     # ---------------- 四、算法改进（下） ----------------
     def v23(self):
         s = self.new_slide("四、算法改进")
         items = [
-            ("① 门槛自动跟着亮度走", "换光照等级不用改参数"),
-            ("② 把速度抖动静下来", "连续几帧加权，曲线更平滑"),
-            ("③ 自动挑“稳定的一段”", "不再人工截取，谁来算都一样"),
-            ("④ 每帧记一笔", "失败率、面积都能事后统计"),
+            ("① 自适应门限",
+             "通俗：门槛自动跟着亮度走，换光照不用改参数\n"
+             "术语：随画面亮度自动更新阈值"),
+            ("② Alpha-Beta 滤波",
+             "通俗：把逐帧抖动抹平，速度曲线更稳\n"
+             "术语：α=0.15、β=0.005，替代逐帧差分"),
+            ("③ 自动稳态窗",
+             "通俗：自动挑出速度稳定的一段来平均，不靠人截取\n"
+             "术语：±15% + 目标完整在 ROI 内 + 连续 ≥1.0 s"),
+            ("④ 逐帧日志",
+             "通俗：每帧记一笔，失败率能直接数出来\n"
+             "术语：记录帧号/时间/检出/面积/坐标"),
         ]
         y = 2.5
         for i, (t, b) in enumerate(items):
-            accent_card(s, 0.9, y, 12.8, 2.3, t, b)
+            accent_card(s, 0.9, y, 12.8, 2.3, t, b, bsize=10.5)
             y += 2.5
         picture(s, ROOT / "第二学期/out/render_nofix/truss_21_15s_v23.png",
                 14.2, 2.5, 13.5, 9.0)
@@ -445,7 +467,7 @@ class Builder:
         banner(s, 14.2, 13.0, 18.7, 3.4,
                "V2.2 → V2.3 只差 ≤2%：算法不是那 ~11% 误差的原因 → 去查几何。",
                "FFF6D9", "BF9000", "7F6000", size=13)
-        self.notes(s, "V2.3 的改进用大白话：门槛自适应、速度平滑、自动挑稳定段、逐帧记账；对误差影响 ≤2%。")
+        self.notes(s, "V2.3 每项同样“术语 + 通俗”：门槛自适应、速度平滑、自动挑稳定段、逐帧记账；对误差影响 ≤2%。")
 
     # ---------------- 五、误差分析（上） ----------------
     def exclude(self):
@@ -502,22 +524,26 @@ class Builder:
     # ---------------- 六、初步成果 ----------------
     def results(self):
         s = self.new_slide("六、初步成果")
-        picture(s, ROOT / "第二学期/out/render/truss_21_15s_v23.png", 0.9, 2.4, 15.6, 9.9)
-        picture(s, ROOT / "第二学期/out/render/truss_30_15s_v23.png", 17.3, 2.4, 15.6, 9.9)
-        textbox(s, 0.9, 12.45, 15.6, 0.7, "21 cm/s：实测 21.11，误差 +0.5%",
-                size=13, color=GREEN, align=PP_ALIGN.CENTER)
-        textbox(s, 17.3, 12.45, 15.6, 0.7, "30 cm/s：实测 29.60，误差 −1.3%",
-                size=13, color=GREEN, align=PP_ALIGN.CENTER)
+        picture(s, ROOT / "第二学期/out/render/truss_21_15s_v23.png", 0.9, 2.4, 15.6, 8.6)
+        picture(s, ROOT / "第二学期/out/render/truss_30_15s_v23.png", 17.3, 2.4, 15.6, 8.6)
+        textbox(s, 0.9, 11.05, 15.6, 0.6, "21 cm/s：稳态均值 21.11，稳态误差 +0.5%",
+                size=12.5, color=GREEN, align=PP_ALIGN.CENTER)
+        textbox(s, 17.3, 11.05, 15.6, 0.6, "30 cm/s：稳态均值 29.60，稳态误差 −1.3%",
+                size=12.5, color=GREEN, align=PP_ALIGN.CENTER)
+        accent_card(s, 0.9, 11.75, 31.9, 2.3, "稳态阶段定义（四条同时满足）",
+                    "① 目标完整落在画面 ROI 内　② 速度与目标相差 ≤15%　"
+                    "③ 连续段（漏检 ≤3 帧）　④ 持续 ≥1.0 s\n"
+                    "稳态阶段误差 = 该段平均速度与目标速度的相对误差（指标 1 判据 ≤20%）",
+                    tsize=13, bsize=10.5)
         data = [
-            ["工况", "目标", "实测", "误差", "失败率", "判定"],
+            ["工况", "目标", "实测（稳态均值）", "稳态阶段误差", "失败率", "判定"],
             ["第一段", "21 cm/s", "21.11", "+0.5%", "0%", "达标"],
             ["第二段", "30 cm/s", "29.60", "−1.3%", "0%", "达标"],
         ]
-        table(s, 0.9, 13.5, 31.9, 2.5, data, col_w=[3.6, 4.4, 4.4, 4.4, 4.4, 10.7],
-              fsize=12.5, first_col_bold=True)
-        self.notes(s, "修正后 21→21.11（+0.5%）、30→29.60（−1.3%），失败率 0%；两项指标均达标。")
+        table(s, 0.9, 14.35, 31.9, 2.2, data, col_w=[3.2, 4.0, 6.0, 6.0, 3.6, 9.1],
+              fsize=11.5, first_col_bold=True)
+        self.notes(s, "初步成果：给出稳态阶段定义（四条判据），表格里的误差就是稳态阶段误差；两项指标均达标。")
 
-    # ---------------- 七、后续规划 ----------------
     def future(self):
         s = self.new_slide("七、后续规划")
         items = [
@@ -549,7 +575,7 @@ class Builder:
         self.results()
         self.future()
         sldIdLst = self.prs.slides._sldIdLst
-        for sldId in list(sldIdLst)[:7]:
+        for sldId in list(sldIdLst)[:self.n_orig]:
             rId = sldId.get(qn("r:id"))
             self.prs.part.drop_rel(rId)
             sldIdLst.remove(sldId)
