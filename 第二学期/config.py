@@ -175,9 +175,16 @@ TARGET_SPEEDS_CMS = (21.0, 31.0)     # 两个考核速度
 # 五、测量协议（v2 §5）
 # ================================================================
 
-# 指标 1 · 稳态区间判据
+# 指标 1 · 稳态区间判据（V2.3 起，四条同时满足）
+#   ① 位置：目标外接框完全落在 ROI 内（ROI = 画面四周内缩 ROI_MARGIN_CM）
+#   ② 速度：|v - v_target| / v_target ≤ STEADY_TOL（αβ 平滑后的速度）
+#   ③ 连续：相邻检出帧的帧号间隔 ≤ MAX_GAP_FRAMES（连续漏检超过它即断开）
+#   ④ 长度：最长连续段时长 ≥ STEADY_MIN_DURATION_S
+#   不满足 ④ → 判“无有效稳态段”，该次按失败处理
 STEADY_TOL = 0.15                    # |v - v_target| / v_target ≤ 15%
 STEADY_MIN_DURATION_S = 1.0          # 最长连续区间长度 ≥ 1.0 s
+ROI_MARGIN_CM = 5.0                  # ROI 相对画面四周内缩；按 PX_PER_CM 折算成像素
+MAX_GAP_FRAMES = 3                   # 检出帧号间隔 > 3 帧（≈50 ms）即断段
 
 # 指标 2 · 检测失败率
 WARMUP_EXCLUDE_S = 1.0               # 排除开头 1.0 s 背景建模期

@@ -131,7 +131,7 @@ def main(argv=None) -> int:
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
                                   (config.MORPH_KERNEL_SIZE, config.MORPH_KERNEL_SIZE))
 
-    rec = []          # (t, ok, area, u, v, wx, wy)
+    rec = []          # (t, ok, area, u, v, wx, wy, bx, by, bw, bh)
     i = 0
     while True:
         ok, img = cap.read()
@@ -141,41 +141,56 @@ def main(argv=None) -> int:
         res, area = detect(gray, mog, args.version, k, args.area_min)
         t = i / fps
         if res is None:
-            rec.append((t, False, area, 0.0, 0.0, 0.0, 0.0))
+            rec.append((t, False, area, 0.0, 0.0, 0.0, 0.0, 0, 0, 0, 0))
         else:
-            _, u, v = res
+            c, u, v = res
+            bx, by, bw, bh = cv2.boundingRect(c)
             wx, wy = to_world(H_inv, u, v)
             wx *= ks
             wy *= ks
-            rec.append((t, True, area, u, v, wx, wy))
+            rec.append((t, True, area, u, v, wx, wy, bx, by, bw, bh))
         i += 1
     cap.release()
-    arr = np.array([(r[0], float(r[1]), r[2], r[3], r[4], r[5], r[6]) for r in rec])
+    arr = np.array([(r[0], float(r[1]), r[2], r[3], r[4], r[5], r[6],
+                     r[7], r[8], r[9], r[10]) for r in rec])
     det = arr[arr[:, 1] > 0]
     if len(det) < 10:
         print("✗ 检出帧太少，无法出报表")
         return 1
 
-    t = det[:, 0]; wx = det[:, 5]; wy = det[:, 6]; area = det[:, 2]
+    t = det[:, 0]; area = det[:, 2]; wx = det[:, 5]; wy = det[:, 6]
+    bx = det[:, 7]; by = det[:, 8]; bw = det[:, 9]; bh = det[:, 10]
     dt = 1.0 / fps
     X, Y, VX, VY = ab_filter(wx, wy, dt)
     V = np.hypot(VX, VY)
 
-    # 稳态窗
+    # ---- 稳态窗：位置中段 + 速度 ±tol + 帧间隔连续 + 时长 ≥ min ----
+    m_px = int(round(config.ROI_MARGIN_CM * config.PX_PER_CM))
+    roi_l, roi_t, roi_r, roi_b = m_px, m_px, w - m_px, h - m_px
+    in_mid = (bx >= roi_l) & (bx + bw <= roi_r) & (by >= roi_t) & (by + bh <= roi_b)
     in_tol = np.abs(V - args.target) / args.target <= config.STEADY_TOL
-    best = (0, 0); s = None
-    for j, flag in enumerate(in_tol):
-        if flag and s is None:
-            s = j
-        if (not flag or j == len(in_tol) - 1) and s is not None:
-            e = j if (flag and j == len(in_tol) - 1) else j - 1
-            if (t[e] - t[s]) > (t[best[1]] - t[best[0]] if best[1] else -1):
-                best = (s, e)
-            s = None
-    s, e = best
-    if e <= s:
-        s, e = 0, len(t) - 1
-    v_steady = float(np.mean(V[s:e+1]))
+    ok_mask = in_tol & in_mid
+    fi = np.array([int(round(tt * fps)) for tt in t], int)
+    runs = []
+    s0 = None
+    for j in range(len(ok_mask)):
+        if s0 is None:
+            if ok_mask[j]:
+                s0 = j
+            continue
+        if (not ok_mask[j]) or (fi[j] - fi[j - 1] > config.MAX_GAP_FRAMES):
+            runs.append((s0, j - 1))
+            s0 = j if ok_mask[j] else None
+    if s0 is not None:
+        runs.append((s0, len(ok_mask) - 1))
+    valid = [(a, b) for a, b in runs if t[b] - t[a] >= config.STEADY_MIN_DURATION_S]
+    has_window = bool(valid)
+    if has_window:
+        s, e = max(valid, key=lambda ab: t[ab[1]] - t[ab[0]])
+        v_steady = float(np.mean(V[s:e + 1]))
+    else:
+        s, e = -1, -1
+        v_steady = float("nan")
 
     # 版本口径：v21/v22 全局拟合，v23 稳态窗均值
     if args.version in ("v21", "v22"):
@@ -184,10 +199,14 @@ def main(argv=None) -> int:
         vx = np.polyfit(t[good], wx[good], 1)[0]
         vy = np.polyfit(t[good], wy[good], 1)[0]
         v_report = float(np.hypot(vx, vy))
-    else:
+        method = "global fit"
+    elif has_window:
         v_report = v_steady
+        method = "steady mean"
+    else:
+        v_report = float(np.mean(V))
+        method = "no steady (global)"
     err_pct = (v_report - args.target) / args.target * 100.0
-    method = "global fit" if args.version in ("v21", "v22") else "steady mean"
 
     t0, t1 = det[0, 0], det[-1, 0]
     win = arr[(arr[:, 0] >= t0) & (arr[:, 0] <= t1)]
@@ -262,15 +281,17 @@ def main(argv=None) -> int:
                  fontsize=12, fontweight="bold")
 
     ax[0, 0].plot(wx, wy, "-", lw=1.2, color="#1f77b4")
-    ax[0, 0].plot(wx[s:e+1], wy[s:e+1], "-", lw=3, color="#2ca02c", alpha=0.7,
-                  label="steady window")
+    if has_window:
+        ax[0, 0].plot(wx[s:e + 1], wy[s:e + 1], "-", lw=3, color="#2ca02c", alpha=0.7,
+                      label="steady window")
     ax[0, 0].set_xlabel("X (cm)"); ax[0, 0].set_ylabel("Y (cm)")
     ax[0, 0].set_title(f"Trajectory ({'plane-corrected' if ks != 1.0 else 'raw geometry'})")
     ax[0, 0].legend(loc="best"); ax[0, 0].grid(alpha=0.3)
 
     ax[0, 1].plot(t, wx, lw=1.2, color="#1f77b4", label="X")
     ax[0, 1].plot(t, wy, lw=1.0, color="#ff7f0e", label="Y")
-    ax[0, 1].axvspan(t[s], t[e], color="#2ca02c", alpha=0.15)
+    if has_window:
+        ax[0, 1].axvspan(t[s], t[e], color="#2ca02c", alpha=0.15)
     ax[0, 1].set_xlabel("t (s)"); ax[0, 1].set_ylabel("position (cm)")
     ax[0, 1].set_title("X / Y vs time"); ax[0, 1].legend(loc="best"); ax[0, 1].grid(alpha=0.3)
 
@@ -278,8 +299,13 @@ def main(argv=None) -> int:
     ax[1, 0].axhline(args.target, color="#2ca02c", ls="--", lw=1, label="target")
     ax[1, 0].axhspan(args.target * 0.85, args.target * 1.15, color="#2ca02c", alpha=0.12,
                      label="±15%")
-    ax[1, 0].axhline(v_steady, color="#d62728", ls=":", lw=1, label=f"steady mean {v_steady:.2f}")
-    ax[1, 0].axvspan(t[s], t[e], color="#2ca02c", alpha=0.12)
+    if has_window:
+        ax[1, 0].axhline(v_steady, color="#d62728", ls=":", lw=1,
+                         label=f"steady mean {v_steady:.2f}")
+        ax[1, 0].axvspan(t[s], t[e], color="#2ca02c", alpha=0.12)
+    else:
+        ax[1, 0].text(0.5, 0.92, "no valid steady window (≥1.0 s)", ha="center",
+                      va="top", transform=ax[1, 0].transAxes, color="#d62728", fontsize=9)
     ax[1, 0].set_xlabel("t (s)"); ax[1, 0].set_ylabel("speed (cm/s)")
     ax[1, 0].set_title("Speed (Alpha-Beta)"); ax[1, 0].legend(loc="best", fontsize=8)
     ax[1, 0].grid(alpha=0.3)
@@ -297,8 +323,10 @@ def main(argv=None) -> int:
 
     print(f"✓ 视频 {vpath}")
     print(f"✓ 报表 {fpath}")
+    win_txt = (f"{t[s]:.2f}~{t[e]:.2f}s（{t[e] - t[s]:.2f} s）" if has_window
+               else f"无有效段（判据 ≥{config.STEADY_MIN_DURATION_S:.1f} s）")
     print(f"  版本 {args.version} | 目标 {args.target:.0f} | 报道速度 {v_report:.2f} cm/s | "
-          f"误差 {err_pct:+.1f}% | 稳态窗 {t[s]:.2f}~{t[e]:.2f}s | 失败率 {fail*100:.1f}%")
+          f"误差 {err_pct:+.1f}% | 稳态窗 {win_txt} | 失败率 {fail*100:.1f}%")
     return 0
 
 

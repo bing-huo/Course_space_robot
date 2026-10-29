@@ -77,6 +77,8 @@ def main(argv=None) -> int:
         print(f"✗ 打不开 {args.video}")
         return 1
     fps = cap.get(cv2.CAP_PROP_FPS) or 60.0
+    w_img = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h_img = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     mog = cv2.createBackgroundSubtractorMOG2(
         history=config.MOG2_HISTORY, varThreshold=config.MOG2_VAR_THRESHOLD,
         detectShadows=True)
@@ -98,14 +100,17 @@ def main(argv=None) -> int:
         hard = cv2.morphologyEx(hard, cv2.MORPH_CLOSE, k)
         cs, _ = cv2.findContours(hard, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         rec = {"i": i, "t": i / fps, "ok": False, "u": 0.0, "v": 0.0,
-               "area": 0.0, "thr": thr}
+               "area": 0.0, "thr": thr,
+               "bx": 0, "by": 0, "bw": 0, "bh": 0}
         if cs:
             c = max(cs, key=cv2.contourArea)
             a = float(cv2.contourArea(c))
             M = cv2.moments(c)
             if a >= args.area_min and M["m00"] > 0:
+                bx, by, bw, bh = cv2.boundingRect(c)
                 rec.update(ok=True, area=a,
-                           u=M["m10"] / M["m00"], v=M["m01"] / M["m00"])
+                           u=M["m10"] / M["m00"], v=M["m01"] / M["m00"],
+                           bx=bx, by=by, bw=bw, bh=bh)
         frames.append(rec)
         i += 1
     cap.release()
@@ -123,21 +128,40 @@ def main(argv=None) -> int:
     X, Y, VX, VY = ab_filter(wx, wy, dt, args.alpha, args.beta)
     V = np.hypot(VX, VY)
 
-    # 稳态窗：|v−target|/target ≤ tol，取最长连续段
+    # ---- 稳态窗：位置中段 + 速度 ±tol + 帧间隔连续 + 时长 ≥ min ----
+    m_px = int(round(config.ROI_MARGIN_CM * config.PX_PER_CM))
+    roi_l, roi_t, roi_r, roi_b = m_px, m_px, w_img - m_px, h_img - m_px
+
+    in_mid = np.array([
+        (r["bx"] >= roi_l and r["bx"] + r["bw"] <= roi_r and
+         r["by"] >= roi_t and r["by"] + r["bh"] <= roi_b) for r in det])
     in_tol = np.abs(V - args.target) / args.target <= args.steady_tol
-    best = (0, 0)
-    s = None
-    for j, flag in enumerate(in_tol):
-        if flag and s is None:
-            s = j
-        if (not flag or j == len(in_tol) - 1) and s is not None:
-            e = j if (flag and j == len(in_tol) - 1) else j - 1
-            if (t[e] - t[s]) > (t[best[1]] - t[best[0]] if best[1] else -1):
-                best = (s, e)
-            s = None
-    s, e = best
+    ok_mask = in_tol & in_mid
+    fi = np.array([r["i"] for r in det], int)
+
+    runs = []
+    s0 = None
+    for j in range(len(ok_mask)):
+        if s0 is None:
+            if ok_mask[j]:
+                s0 = j
+            continue
+        if (not ok_mask[j]) or (fi[j] - fi[j - 1] > config.MAX_GAP_FRAMES):
+            runs.append((s0, j - 1))
+            s0 = j if ok_mask[j] else None
+    if s0 is not None:
+        runs.append((s0, len(ok_mask) - 1))
+
+    valid = [(a, b) for a, b in runs if t[b] - t[a] >= args.steady_min_s]
+    has_window = bool(valid)
+    if has_window:
+        s, e = max(valid, key=lambda ab: t[ab[1]] - t[ab[0]])
+    elif runs:
+        s, e = max(runs, key=lambda ab: t[ab[1]] - t[ab[0]])
+    else:
+        s, e = 0, -1
     dur = t[e] - t[s] if e > s else 0.0
-    v_steady = float(np.mean(V[s:e+1])) if e > s else float("nan")
+    v_steady = float(np.mean(V[s:e + 1])) if has_window else float("nan")
     v_global = float(np.mean(V))
 
     # 失败率：目标在画面内的帧（首次检出 → 末次检出）
@@ -151,10 +175,20 @@ def main(argv=None) -> int:
     print(f"检出      统计窗 {t0:.2f}~{t1:.2f}s（{len(win)} 帧）→ 失败率 {fail*100:.1f}%")
     print(f"轮廓面积  中位 {np.median([r['area'] for r in det]):.0f} px²")
     print(f"速度      全程均 {v_global:.2f} cm/s")
-    print(f"稳态窗    {t[s]:.2f}~{t[e]:.2f}s（{dur:.2f} s，{e-s+1} 帧）→ "
-          f"{v_steady:.2f} cm/s")
-    print(f"相对误差  {(v_steady - args.target)/args.target*100:+.1f}%"
-          f"（目标 {args.target:.1f} cm/s）")
+    longest = max((t[b] - t[a] for a, b in runs), default=0.0)
+    print(f"候选帧    位置 {int(in_mid.sum())}/{len(det)}｜速度 {int(in_tol.sum())}/{len(det)}"
+          f"｜连续段 {len(runs)} 个，最长 {longest:.2f} s")
+    if has_window:
+        print(f"稳态窗    {t[s]:.2f}~{t[e]:.2f}s（{dur:.2f} s，{e - s + 1} 帧）→ "
+              f"{v_steady:.2f} cm/s")
+        print(f"相对误差  {(v_steady - args.target) / args.target * 100:+.1f}%"
+              f"（目标 {args.target:.1f} cm/s）")
+    else:
+        print(f"稳态窗    无有效段（最长连续段仅 {longest:.2f} s，判据 ≥"
+              f"{args.steady_min_s:.1f} s）→ 该次按失败处理")
+    print(f"判据      位置 ROI 内缩 {config.ROI_MARGIN_CM:.0f} cm｜速度 ±"
+          f"{args.steady_tol * 100:.0f}%｜帧号间隔 ≤{config.MAX_GAP_FRAMES}｜"
+          f"时长 ≥{args.steady_min_s:.1f} s")
 
     if args.log:
         p = Path(args.log)
