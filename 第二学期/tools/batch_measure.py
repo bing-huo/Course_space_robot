@@ -101,8 +101,9 @@ def main(argv=None) -> int:
         raw.append(rec)
         ws = (f"{rec['v_steady']:.2f} cm/s" if rec["v_steady"] is not None
               else "无有效段")
-        print(f"{p.name:14s} 稳态 {ws:>12s}  误差 {rec['err_pct']:>6}%  "
-              f"失败率 {rec['fail_pct']:>5}%")
+        err = f"{rec['err_pct']:+.1f}%" if rec["err_pct"] is not None else "—"
+        fail = f"{rec['fail_pct']:.1f}%" if rec["fail_pct"] is not None else "—"
+        print(f"{p.name:14s} 稳态 {ws:>12s}  误差 {err:>7s}  失败率 {fail:>6s}")
 
     # 逐段
     raw_path = d / "raw.csv"
