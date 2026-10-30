@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "backend": "native",
+  "rasterEngine": "libreoffice",
+  "source": "saved",
+  "inputPath": "C:\\Users\\binghuo\\Desktop\\科创课\\Course_space_robot\\第二学期\\doc\\视觉算法组_周汇报_10.30.pptx",
+  "sourceSha256": "4115692e78b7edce236eeec84ad5812e21228b0a82de2592832655cbbec592e8",
+  "dpi": 144,
+  "pageCount": 9,
+  "images": [
+    {
+      "index": 1,
+      "page": 4,
+      "path": "C:\\Users\\binghuo\\Desktop\\科创课\\Course_space_robot\\第二学期\\doc\\.dsh-office-9ab4abb61a0942759887d2985b8a734e\\render\\page-0001.png",
+      "width": 1921,
+      "height": 1081,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280.0666666666666,
+        "height": 720.0666666666667
+      },
+      "byteLength": 328130
+    },
+    {
+      "index": 2,
+      "page": 5,
+      "path": "C:\\Users\\binghuo\\Desktop\\科创课\\Course_space_robot\\第二学期\\doc\\.dsh-office-9ab4abb61a0942759887d2985b8a734e\\render\\page-0002.png",
+      "width": 1921,
+      "height": 1081,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280.0666666666666,
+        "height": 720.0666666666667
+      },
+      "byteLength": 297956
+    },
+    {
+      "index": 3,
+      "page": 8,
+      "path": "C:\\Users\\binghuo\\Desktop\\科创课\\Course_space_robot\\第二学期\\doc\\.dsh-office-9ab4abb61a0942759887d2985b8a734e\\render\\page-0003.png",
+      "width": 1921,
+      "height": 1081,
+      "rectangle": {
+        "x": 0,
+        "y": 0,
+        "width": 1280.0666666666666,
+        "height": 720.0666666666667
+      },
+      "byteLength": 336593
+    }
+  ],
+  "missingFonts": [
+    "Songti SC",
+    "Wingdings 2"
+  ]
+}

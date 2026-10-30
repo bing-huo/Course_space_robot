@@ -296,8 +296,8 @@ class Builder:
     def platform(self):
         s = self.new_slide("一、实验平台")
         metric_strip(s, 0.9, 2.4, 32.0, 2.3, [
-            ("143 cm", "镜头 → 桌面", BLUE),
-            ("117 cm", "标定面 WD（143 − 26）", GREEN),
+            ("144 cm", "镜头 → 桌面", BLUE),
+            ("118 cm", "标定面 WD（144 − 26）", GREEN),
             ("87.2 × 69.7 cm", "视野（测量区 77 × 60）", ORANGE),
         ])
 
@@ -313,7 +313,7 @@ class Builder:
         table(s, 0.9, 5.2, 16.4, 10.4, data, col_w=[5.4, 11.0], fsize=12,
               first_col_bold=True)
         textbox(s, 0.9, 15.75, 16.4, 0.8,
-                "注：标定板反算 WD 113.5 cm，与几何 117 cm 差 3%（焦距标称误差），不影响单应 H。",
+                "注：标定板反算 WD 114.8 cm，与几何 118 cm 差 2.7%（焦距标称误差），不影响单应 H。",
                 size=10, color=GRAY)
 
         picture(s, BASE / "1792846636855.jpg", 18.2, 5.2, 7.6, 5.7)
@@ -335,18 +335,18 @@ class Builder:
                     "方格 15 mm，12 × 9 格 → OpenCV 内角点 11 × 8\n"
                     "玻璃基板，DFOPTIX")
         accent_card(s, 0.9, 7.6, 15.4, 8.3, "标定流程",
-                    "① 相机固定、调焦（WD ≈ 117 cm）\n"
+                    "① 相机固定、调焦（WD ≈ 118 cm）\n"
                     "② 标定板置于桁架顶面（跟踪面）\n"
                     "③ 采集图像，板面不反光\n"
                     "④ SB 角点检测：88 个内角点\n"
                     "⑤ RANSAC 求单应 H（cm → px）\n"
                     "⑥ 5 cm 网格叠加 + 重投影校验")
         picture(s, BASE / "fig_calib.png", 17.2, 2.5, 15.6, 10.2)
-        stat_card(s, 17.2, 13.0, 7.6, 2.3, "0.042", "px", "重投影 RMS")
-        stat_card(s, 25.1, 13.0, 7.8, 2.3, "14.67", "px/cm", "像素尺度（X）")
+        stat_card(s, 17.2, 13.0, 7.6, 2.3, "0.044", "px", "重投影 RMS")
+        stat_card(s, 25.1, 13.0, 7.8, 2.3, "14.73", "px/cm", "像素尺度（X）")
         banner(s, 17.2, 15.5, 15.7, 1.1,
                "标定结果：88 / 88 个内角点全部检出", "E9F5E9", GREEN, GREEN, size=13)
-        self.notes(s, "标定结果要强调：88 个内角点全部检出，重投影 RMS 0.042 px，14.67 px/cm。")
+        self.notes(s, "标定结果要强调：88 个内角点全部检出，重投影 RMS 0.044 px，14.73 px/cm。")
 
     # ---------------- 三、算法移植 ----------------
     def v21(self):
