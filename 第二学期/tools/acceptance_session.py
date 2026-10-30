@@ -3,15 +3,15 @@
 """验收实验会话：按「一个光强 → 两个速度 → 换光强」的顺序录制，最后自动批量测量
 
 用法（在 第二学期/ 下运行）：
-    python -m tools.acceptance_session                 # 默认 L1 L2 L3，21/30 cm/s，各 3 次
-    python -m tools.acceptance_session --levels L1 L2 L3 --speeds 21 30 --reps 3
+    python -m tools.acceptance_session                 # 默认 L1 L2 L3，21/31 cm/s，每个组合 1 次
+    python -m tools.acceptance_session --levels L1 L2 L3 --speeds 21 31 --reps 1
     python -m tools.acceptance_session --dry-run       # 只打印流程，不录、不调用相机
 
 流程：
     对每个光照等级：
         1. 提示把灯调到该档，输入照度计读数（lx），自动写进 conditions.csv；
-        2. 21 cm/s 录 3 段（每段 5 秒倒计时 + 15 秒录制）；
-        3. 30 cm/s 录 3 段；
+        2. 21 cm/s 录 1 段（5 秒倒计时 + 15 秒录制）；
+        3. 31 cm/s 录 1 段；
     全部录完，问是否跑 tools.batch_measure 出 summary.csv。
 
 文件名：out/acceptance/<等级>_<速度>_<次数>.mp4，例如 L1_21_1.mp4。
@@ -92,8 +92,8 @@ def record(video: Path, exposure: float, gain: float, dry: bool) -> float | None
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="验收实验会话（光强→速度→次数）")
     ap.add_argument("--levels", nargs="+", default=["L1", "L2", "L3"])
-    ap.add_argument("--speeds", nargs="+", type=float, default=[21.0, 30.0])
-    ap.add_argument("--reps", type=int, default=3)
+    ap.add_argument("--speeds", nargs="+", type=float, default=[21.0, 31.0])
+    ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--outdir", default="out/acceptance")
     ap.add_argument("--conditions", default="data/2026-10-30_验收/conditions.csv")
     ap.add_argument("--exposure", type=float, default=10000.0)
@@ -106,7 +106,7 @@ def main(argv=None) -> int:
     if not args.dry_run:
         outdir.mkdir(parents=True, exist_ok=True)
     print("=" * 64)
-    print(f"  验收录制：等级 {args.levels}｜速度 {args.speeds}｜每档 {args.reps} 次")
+    print(f"  验收录制：等级 {args.levels}｜速度 {args.speeds}｜每个组合 {args.reps} 次")
     print(f"  输出 {outdir}｜条件表 {cond}")
     print("=" * 64)
 
