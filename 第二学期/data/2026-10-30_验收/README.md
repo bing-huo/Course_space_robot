@@ -9,7 +9,25 @@
 
 条件表：`conditions.csv`（测一档填一档）。
 
-## 测量流程
+## 一键录制（推荐）
+
+顺序：**一个光强 → 21 和 30 两个速度 → 换下一个光强**。
+
+```powershell
+cd "C:\Users\binghuo\Desktop\科创课\Course_space_robot\第二学期"
+python -m tools.acceptance_session
+```
+
+运行后按提示操作：
+
+1. 输入当前光强的照度（lx）→ 自动写进 `conditions.csv`；
+2. 每段都有 5 秒倒计时，倒计时结束把小车推过去（15 秒录制）；
+3. 一个光强的 21×3、30×3 录完，自动进入下一个光强；
+4. 全部录完，问是否直接跑批量测量 → 选 Y 出 `summary.csv`。
+
+可选参数：`--levels L1 L2 L3`、`--speeds 21 30`、`--reps 3`、`--dry-run`（只打印流程）。
+
+## 测量流程（手动版）
 
 1. 机位、曝光（10 ms / F2.8 / 6 dB）保持不动；
 2. 每个光照等级下，小车以 21 / 30 cm/s 各跑 3 次，录 15 s；
