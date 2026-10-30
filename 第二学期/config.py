@@ -71,10 +71,10 @@ def ensure_dirs() -> None:
 #   px/cm 按【整个视野】算：1280 ÷ 110 = 11.64
 
 # ---- 以下为 2026-10-23 晚 实测值（覆盖理论推导）----
-REGION_W_CM = 77.0          # 测量区（沿运动方向）：视野 87.2 两端各留约 5 cm
-REGION_H_CM = 60.0          # 测量区短边：视野 69.7 上下各留约 4.8 cm
-WORKING_DISTANCE_M = 1.135  # 镜头 → 标定板平面（桁架顶面）实测
-PX_PER_CM = 14.67           # 实测（Q12-200-15 反算；Y 向 14.70）
+REGION_W_CM = 76.9          # 测量区（沿运动方向）：视野 87.2 两端各留约 5 cm
+REGION_H_CM = 59.3          # 测量区短边：视野 69.7 上下各留约 4.8 cm
+WORKING_DISTANCE_M = 1.148  # 镜头 → 标定板平面（桁架顶面）实测
+PX_PER_CM = 14.73           # 实测（Q12-200-15 反算；Y 向 14.70）
 
 # ---- 跟踪面修正（2026-10-24 由实测速度反推）----
 #
@@ -95,7 +95,7 @@ LENS_FOCAL_MM = 8.0
 
 # 由实测 px/cm 反推的视野（自检用，应 ≈ 87.2 × 69.7 cm）
 FOV_W_CM = 1280.0 / PX_PER_CM                       # 87.2
-FOV_H_CM = 1024.0 / (PX_PER_CM * 14.70 / 14.67)     # 69.7
+FOV_H_CM = 1024.0 / (PX_PER_CM * 14.77 / 14.73)     # 69.7
 FOV_MARGIN_CM = (FOV_W_CM - REGION_W_CM) / 2        # 5.1
 
 # 轮廓面积下限（px²），P2.2 按实测 px/cm 反算。
@@ -226,7 +226,7 @@ MVS_PATH_CANDIDATES = [
 
 if __name__ == "__main__":
     # 直接运行本文件可以看当前几何推导是否自洽
-    print(f"区域      {REGION_W_CM:.0f} × {REGION_H_CM:.0f} cm（2026-10-23 实测）")
+    print(f"区域      {REGION_W_CM:.0f} × {REGION_H_CM:.0f} cm（2026-10-30 重标）")
     print(f"视野      {FOV_W_CM:.1f} × {FOV_H_CM:.1f} cm（每边留 {FOV_MARGIN_CM:.1f} cm）")
     print(f"工作距离  {WORKING_DISTANCE_M:.3f} m（镜头→车顶跟踪面）")
     print(f"px/cm     {PX_PER_CM:.2f}（实测）")
