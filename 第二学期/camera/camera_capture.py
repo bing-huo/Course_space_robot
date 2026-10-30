@@ -621,7 +621,7 @@ def cmd_bench(args) -> int:
     print("\n② 硬件时间戳")
     if dev_deltas:
         unit = statistics.median(host_deltas) / statistics.median(dev_deltas)
-        cand = min((1e-9, 1e-6, 1e-3), key=lambda u: abs(u - unit))
+        cand = min((1e-9, 1e-8, 1e-6, 1e-3), key=lambda u: abs(u - unit))
         agree = abs(cand - unit) / cand < 0.2
         print(f"   可用：是（{len(dev_deltas)} 对样本）")
         print(f"   推算单位      {unit:.3e} 秒/刻度  →  最接近 {cand:.0e} s"
