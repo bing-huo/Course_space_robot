@@ -44,8 +44,8 @@ def main():
         else:
             ax.set_ylim(0, 20)
         levels = sorted({r['等级'] for r in rows})
-        lux = {r['等级']: float(r['照度_lx']) for r in rows}
-        ax.set_xticks(range(len(levels)), [f'{lv}\n{lux[lv]:.0f} lx' for lv in levels])
+        lux = {r['等级']: str(r['照度区间']).strip() for r in rows}
+        ax.set_xticks(range(len(levels)), [f'{lv}\n{lux[lv]} lx' for lv in levels])
         ax.set_title(title, fontweight='bold'); ax.set_ylabel('%')
         ax.grid(axis='y', alpha=.18); ax.set_axisbelow(True)
         ax.legend(loc='upper center', bbox_to_anchor=(.5, -.12), ncol=2)
@@ -88,11 +88,11 @@ def main():
     (figures / 'verification.json').write_text(json.dumps(checks, ensure_ascii=False, indent=2), encoding='utf-8')
     lines = ['# 图表与视频索引', '', '6/6 达标，最大绝对速度误差 1.3%，最大检测失败率 1.5%。', '',
              '六段独立复测与历史汇总、预期表完全一致；重新渲染的报告数值与复测一致。', '',
-             '| 视频 | 照度 lx | 目标 cm/s | 实测 cm/s | 误差 % | 失败率 % | 四宫格 | 标注视频 |',
+             '| 视频 | 照度区间 | 目标 cm/s | 实测 cm/s | 误差 % | 失败率 % | 四宫格 | 标注视频 |',
              '|---|---:|---:|---:|---:|---:|---|---|']
     for r in rows:
         stem = f"{r['等级']}_{r['目标速度_cms']}_1"
-        lines.append(f"| {stem} | {r['照度_lx']} | {r['目标速度_cms']} | {r['稳态速度均值_cms']} | {r['误差均值_pct']} | {r['失败率均值_pct']} | [{stem}_v23.png](../../out/acceptance/figures/{stem}_v23.png) | [{stem}_v23.mp4](../../out/acceptance/videos/{stem}_v23.mp4) |")
+        lines.append(f"| {stem} | {r['照度区间']} | {r['目标速度_cms']} | {r['稳态速度均值_cms']} | {r['误差均值_pct']} | {r['失败率均值_pct']} | [{stem}_v23.png](../../out/acceptance/figures/{stem}_v23.png) | [{stem}_v23.mp4](../../out/acceptance/videos/{stem}_v23.mp4) |")
     odd = [c for c in checks if c['frames'] != 915]
     frame_note = ('实际源文件 ' + '、'.join(f"{c['video']} 为 {c['frames']} 帧" for c in odd)
                   + '；其余为 915 帧（15.250 s）；标注视频逐段与源文件一致。') if odd else \
@@ -107,7 +107,7 @@ def main():
               '视频使用 mp4v，保持原始分辨率、帧率和帧数；完整解码检查见 figures/verification.json。',
               frame_note,
               '四宫格及汇总图均为 3300×2250、300 dpi。汇总图同时显示误差 ±20% 和失败率 15% 判据。',
-              'HUD 的误差使用实际计算值（如 450 lx / 21 cm/s 为 −0.9%），未采用需求示例中的 +0.5%。',
+              'HUD 的误差使用实际计算值（如 L2 / 21 cm/s 为 −0.9%），未采用需求示例中的 +0.5%。',
               '原始视频、测量算法、根目录文档和 PPT 未改动；未提交或推送 git。', '']
     lines += ['## 视觉检查记录', '',
               '配置：Matplotlib Agg 导出 PNG；OpenCV mp4v 写入并解码视频。中文字体实际解析到 C:/Windows/Fonts/msyh.ttc。',

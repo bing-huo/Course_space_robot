@@ -57,7 +57,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dir", required=True, help="视频目录，如 out/acceptance")
     ap.add_argument("--calib", default="calibration/calibration_config.json")
     ap.add_argument("--lux-file", default="",
-                    help="光照条件表（两列：等级,照度_lx），用于汇总里带上照度")
+                    help="光照条件表（等级 + 照度_min/照度_max），用于汇总里带上照度区间")
     ap.add_argument("--logdir", default="", help="逐帧日志目录（默认 <dir>/detect_logs）")
     args = ap.parse_args(argv)
 
@@ -79,11 +79,13 @@ def main(argv=None) -> int:
         if lp.is_file():
             with lp.open(encoding="utf-8-sig", newline="") as fh:
                 for row in csv.DictReader(fh):
-                    try:
-                        lux[row["等级"].strip()] = float(str(row["照度_lx"]).strip())
-                    except (KeyError, ValueError):
-                        pass
-            print(f"光照条件：{ ', '.join(f'{k}={v:.0f}lx' for k, v in lux.items()) }")
+                    lv = row.get("等级", "").strip()
+                    lo, hi = row.get("照度_min", "").strip(), row.get("照度_max", "").strip()
+                    if lv and lo and hi:
+                        lux[lv] = f"{float(lo):.0f}–{float(hi):.0f}"
+                    elif lv and row.get("照度_lx", "").strip():
+                        lux[lv] = f"{float(row['照度_lx']):.0f}"
+            print(f"光照条件：{ ', '.join(f'{k}={v} lx' for k, v in lux.items()) }")
 
     raw = []
     for p in vids:
@@ -128,7 +130,7 @@ def main(argv=None) -> int:
     summ_path = d / "summary.csv"
     with summ_path.open("w", encoding="utf-8-sig", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["等级", "照度_lx", "目标速度_cms", "次数",
+        w.writerow(["等级", "照度区间", "目标速度_cms", "次数",
                     "稳态速度均值_cms", "误差均值_pct", "失败率均值_pct",
                     "指标1_速度≤20%", "指标2_失败率≤15%", "总体判定", "备注"])
         for (level, target), rs in sorted(groups.items()):
@@ -141,7 +143,7 @@ def main(argv=None) -> int:
                 m1 = abs(e_mean) / 100.0 <= V_LIMIT
                 m2 = f_mean / 100.0 <= F_LIMIT
                 note = "" if len(ok) == n else f"{n - len(ok)} 段无有效稳态"
-                w.writerow([level, f"{lux.get(level, ''):.0f}" if level in lux else "",
+                w.writerow([level, lux.get(level, ""),
                             f"{target:.0f}", n, f"{v_mean:.2f}", f"{e_mean:+.1f}",
                             f"{f_mean:.1f}", "是" if m1 else "否",
                             "是" if m2 else "否", "达标" if (m1 and m2) else "未达标", note])
