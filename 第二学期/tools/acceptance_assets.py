@@ -43,7 +43,9 @@ def main():
             ax.set_ylim(-24, 26)
         else:
             ax.set_ylim(0, 20)
-        ax.set_xticks(range(3), ['L1\n450 lx', 'L2\n350 lx', 'L3\n550 lx'])
+        levels = sorted({r['等级'] for r in rows})
+        lux = {r['等级']: float(r['照度_lx']) for r in rows}
+        ax.set_xticks(range(len(levels)), [f'{lv}\n{lux[lv]:.0f} lx' for lv in levels])
         ax.set_title(title, fontweight='bold'); ax.set_ylabel('%')
         ax.grid(axis='y', alpha=.18); ax.set_axisbelow(True)
         ax.legend(loc='upper center', bbox_to_anchor=(.5, -.12), ncol=2)
@@ -91,6 +93,10 @@ def main():
     for r in rows:
         stem = f"{r['等级']}_{r['目标速度_cms']}_1"
         lines.append(f"| {stem} | {r['照度_lx']} | {r['目标速度_cms']} | {r['稳态速度均值_cms']} | {r['误差均值_pct']} | {r['失败率均值_pct']} | [{stem}_v23.png](../../out/acceptance/figures/{stem}_v23.png) | [{stem}_v23.mp4](../../out/acceptance/videos/{stem}_v23.mp4) |")
+    odd = [c for c in checks if c['frames'] != 915]
+    frame_note = ('实际源文件 ' + '、'.join(f"{c['video']} 为 {c['frames']} 帧" for c in odd)
+                  + '；其余为 915 帧（15.250 s）；标注视频逐段与源文件一致。') if odd else \
+                 '六段均为 915 帧（15.250 s）；标注视频逐段与源文件一致。'
     lines += ['', '汇总图：[summary_light_levels.png](../../out/acceptance/figures/summary_light_levels.png)', '',
               '## 复现命令', '', '在 `第二学期/` 执行（PowerShell）：', '', '```powershell',
               "$env:PYTHONIOENCODING='utf-8'", 'python -m tools.batch_measure --dir out/acceptance --lux-file data/2026-10-30_验收/conditions.csv',
@@ -99,9 +105,9 @@ def main():
               '}', 'python -m tools.acceptance_assets', '```', '',
               '复测由 batch_measure 逐段调用 measure_speed，产生 raw.csv、summary.csv 和 detect_logs。',
               '视频使用 mp4v，保持原始分辨率、帧率和帧数；完整解码检查见 figures/verification.json。',
-              '实际源文件 L1_31_1 为 914 帧（15.233 s），其余五段为 915 帧（15.250 s）；标注视频逐段与源文件一致。',
+              frame_note,
               '四宫格及汇总图均为 3300×2250、300 dpi。汇总图同时显示误差 ±20% 和失败率 15% 判据。',
-              'HUD 的误差使用实际计算值，例如 L1_21_1 为 −0.9%，未采用需求示例中的 +0.5%。',
+              'HUD 的误差使用实际计算值（如 450 lx / 21 cm/s 为 −0.9%），未采用需求示例中的 +0.5%。',
               '原始视频、测量算法、根目录文档和 PPT 未改动；未提交或推送 git。', '']
     lines += ['## 视觉检查记录', '',
               '配置：Matplotlib Agg 导出 PNG；OpenCV mp4v 写入并解码视频。中文字体实际解析到 C:/Windows/Fonts/msyh.ttc。',
