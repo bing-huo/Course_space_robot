@@ -106,6 +106,7 @@ def main(argv=None) -> int:
     ap.add_argument("--calib", default="calibration/calibration_config.json")
     ap.add_argument("--area-min", type=float, default=config.CONTOUR_AREA_MIN)
     ap.add_argument("--outdir", default="out/render")
+    ap.add_argument("--video-outdir", default=None, help="视频独立输出目录（省略则保持原行为）")
     ap.add_argument("--arrow-s", type=float, default=0.30, help="速度矢量代表的时长（s）")
     ap.add_argument("--plane-scale", type=float, default=None,
                     help="覆盖等效平面修正；给 1.0 可看未修正效果")
@@ -122,7 +123,11 @@ def main(argv=None) -> int:
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     outdir = Path(args.outdir); outdir.mkdir(parents=True, exist_ok=True)
     stem = Path(args.video).stem
-    vpath = outdir / f"{stem}_{args.version}.mp4"
+    video_dir = Path(args.video_outdir) if args.video_outdir else outdir
+    video_dir.mkdir(parents=True, exist_ok=True)
+    vpath = video_dir / f"{stem}_{args.version}.mp4"
+    if vpath.resolve() == Path(args.video).resolve():
+        raise ValueError("输出路径不能覆盖原始视频")
 
     # ---------------- 第一遍：检测 + 记录 ----------------
     mog = cv2.createBackgroundSubtractorMOG2(
@@ -219,6 +224,9 @@ def main(argv=None) -> int:
     # ---------------- 第二遍：重绘 + 写视频 ----------------
     cap = cv2.VideoCapture(args.video)
     writer = cv2.VideoWriter(str(vpath), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    if not writer.isOpened():
+        cap.release()
+        raise RuntimeError(f"无法创建视频：{vpath}")
     mog = cv2.createBackgroundSubtractorMOG2(
         history=config.MOG2_HISTORY, varThreshold=config.MOG2_VAR_THRESHOLD,
         detectShadows=True)
@@ -250,24 +258,50 @@ def main(argv=None) -> int:
                                      wy[j] + VY[j] * args.arrow_s, ks)
                 cv2.arrowedLine(img, (int(x0), int(y0)), (int(x1), int(y1)),
                                 (0, 140, 255), 3, tipLength=0.28)
-                cv2.putText(img, f"v={v_now:.1f} cm/s (ab)", (int(x1) + 6, int(y1) - 6),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 140, 255), 2, cv2.LINE_AA)
+                label = f"v={v_now:.1f} cm/s"
+                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.65, 2)
+                lx = max(12, min(w - tw - 20, int(x1) + 8))
+                ly = max(145, min(h - 95, int(y1) - 42))
+                cv2.rectangle(img, (lx - 5, ly - th - 7), (lx + tw + 5, ly + 7), (25, 25, 25), -1)
+                cv2.putText(img, label, (lx, ly), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.65, (0, 175, 255), 2, cv2.LINE_AA)
         for a, b in zip(trail[:-1], trail[1:]):
             cv2.line(img, a, b, (0, 200, 255), 2)
+        if tracked:
+            cv2.circle(img, (int(u), int(v)), 5, (0, 0, 255), -1)
 
         # HUD
-        cv2.rectangle(img, (0, 0), (w, 96), (30, 30, 30), -1)
+        overlay = img.copy()
+        cv2.rectangle(overlay, (0, 0), (w, 112), (12, 18, 24), -1)
+        cv2.rectangle(overlay, (0, h - 82), (w, h), (12, 18, 24), -1)
+        cv2.addWeighted(overlay, 0.82, img, 0.18, 0, img)
         cv2.putText(img, f"{args.version.upper()} | target {args.target:.0f} cm/s | "
-                         f"measured {v_report:.2f} cm/s ({method}) | error {err_pct:+.1f}%",
-                    (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 255, 255), 2, cv2.LINE_AA)
+                         f"measured {v_report:.2f} ({err_pct:+.1f}%) | failure {fail*100:.1f}%",
+                    (18, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.73, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(img, f"t={now:5.2f}s | v={v_now:5.1f} cm/s | area={cur_area:6.0f} | "
                          f"{'TRACK' if tracked else 'LOST'}",
-                    (12, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (230, 230, 230), 1, cv2.LINE_AA)
+                    (18, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.68, (240, 240, 240), 2, cv2.LINE_AA)
         j = det_idx.get(fi)
-        in_steady = j is not None and (s <= j <= e)
+        in_steady = has_window and t[s] <= now <= t[e]
         if in_steady:
-            cv2.putText(img, "STEADY", (12, 82), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                        (0, 220, 0), 2, cv2.LINE_AA)
+            cv2.putText(img, "STEADY", (18, 99), cv2.FONT_HERSHEY_SIMPLEX, 0.68,
+                        (90, 255, 120), 2, cv2.LINE_AA)
+        else:
+            cv2.putText(img, "OUTSIDE STEADY WINDOW", (18, 99), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.68, (220, 220, 220), 2, cv2.LINE_AA)
+        left, right, bar_y = 24, w - 24, h - 30
+        duration = max((len(rec) - 1) / fps, 1 / fps)
+        def time_x(value):
+            return int(left + (right - left) * value / duration)
+        cv2.rectangle(img, (left, bar_y), (right, bar_y + 12), (95, 103, 110), -1)
+        if has_window:
+            cv2.rectangle(img, (time_x(t[s]), bar_y), (time_x(t[e]), bar_y + 12), (60, 205, 90), -1)
+        cv2.line(img, (time_x(now), bar_y - 6), (time_x(now), bar_y + 18), (255, 255, 255), 3)
+        window_label = f"steady {t[s]:.2f}-{t[e]:.2f}s" if has_window else "no steady window"
+        cv2.putText(img, f"0s | GREEN: {window_label}", (left, h - 48),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.57, (240, 240, 240), 1, cv2.LINE_AA)
+        cv2.putText(img, f"{len(rec)/fps:.2f}s", (right - 90, h - 48),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.57, (240, 240, 240), 1, cv2.LINE_AA)
         writer.write(img)
         i += 1
     cap.release(); writer.release()
